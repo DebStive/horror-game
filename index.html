@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>The Hollow</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; color: #ddd; }
+  /* touch-action:none stops the browser scrolling/zooming while the player drags the screen. */
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #hud { position: fixed; top: 12px; left: 12px; pointer-events: none; text-shadow: 0 0 4px #000; }
+  #stam { width: 120px; height: 6px; background: #222; margin-top: 6px; }
+  #stamFill { height: 100%; width: 100%; background: #9ab; }
+  #toast { position: fixed; bottom: 18%; width: 100%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .4s; }
+  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; background: rgba(0,0,0,.85); text-align: center; padding: 1rem; }
+  #overlay.hidden { display: none; }
+  h1 { letter-spacing: .3em; color: #a22; margin: 0 0 .5rem; }
+  button { font-size: 1.1rem; padding: .7rem 2rem; margin-top: 1rem; background: #411; color: #eee; border: 1px solid #a22; cursor: pointer; }
+</style>
+<!-- Pinned version: an unpinned CDN URL could change under you or be tampered with. -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><div id="orbs">Orbs 0/3</div><div id="stam"><div id="stamFill"></div></div></div>
+<div id="toast"></div>
+<div id="overlay">
+  <h1 id="title">THE HOLLOW</h1>
+  <p id="msg">Find 3 orbs. Unlock the exit. Don't let it catch you.<br>
+     Desktop: WASD + mouse, Shift to sprint. Touch: left thumb moves, right thumb looks.</p>
+  <button id="go">Enter</button>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- Level data ----------
+// '#' wall, '.' floor, 'P' player start, 'E' exit. Coordinates are (col, row).
+const MAP = [
+  "###############",
+  "#P....#.......#",
+  "#.###.#.#####.#",
+  "#.#...#.#...#.#",
+  "#.#.###.#.#.#.#",
+  "#.#.....#.#...#",
+  "#.#######.#####",
+  "#.......#.....#",
+  "#######.#####.#",
+  "#.....#.....#.#",
+  "#.###.#####.#.#",
+  "#.#.........#.#",
+  "#.#.#########.#",
+  "#...#........E#",
+  "###############",
+];
+const ORB_CELLS = [[1, 7], [11, 11], [11, 3]];
+const ENEMY_SPAWN = [13, 1];
+const CELL = 4, WALL_H = 3, RADIUS = 0.4, EYE = 1.6;
+const ROWS = MAP.length, COLS = MAP[0].length;
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const isWallCell = (c, r) => r < 0 || c < 0 || r >= ROWS || c >= COLS || MAP[r][c] === '#'; // out of bounds = wall, so nothing can escape
+const cellOf = v => Math.floor(v / CELL);
+const centerOf = c => (c + 0.5) * CELL;
+const blocked = (x, z) => isWallCell(cellOf(x), cellOf(z));
+// Test the four corners of the player's bounding square so they can't clip into walls.
+const collides = (x, z) => blocked(x - RADIUS, z - RADIUS) || blocked(x + RADIUS, z - RADIUS) ||
+                           blocked(x - RADIUS, z + RADIUS) || blocked(x + RADIUS, z + RADIUS);
+
+function findCell(ch) {
+  for (let r = 0; r < ROWS; r++) { const c = MAP[r].indexOf(ch); if (c !== -1) return [c, r]; }
+  throw new Error(`Map is missing '${ch}'`); // fail loudly on a bad level instead of spawning at NaN
+}
+const [START_C, START_R] = findCell('P');
+const [EXIT_C, EXIT_R] = findCell('E');
+
+// ---------- Pathfinding ----------
+// BFS on a 15x15 grid is trivial in cost. Returns the NEXT cell on the shortest path, or null.
+function nextStep(fc, fr, tc, tr) {
+  if (fc === tc && fr === tr) return null;
+  const prev = new Int32Array(ROWS * COLS).fill(-1);
+  const start = fr * COLS + fc, goal = tr * COLS + tc;
+  const queue = [start];
+  prev[start] = start;
+  for (let i = 0; i < queue.length && prev[goal] === -1; i++) { // index-walk avoids O(n) Array.shift()
+    const cur = queue[i], c = cur % COLS, r = (cur - c) / COLS;
+    for (const [dc, dr] of DIRS) {
+      const nc = c + dc, nr = r + dr;
+      if (isWallCell(nc, nr)) continue;
+      const n = nr * COLS + nc;
+      if (prev[n] !== -1) continue;
+      prev[n] = cur;
+      queue.push(n);
+    }
+  }
+  if (prev[goal] === -1) return null;
+  let cur = goal;
+  while (prev[cur] !== start) cur = prev[cur];
+  return [cur % COLS, Math.floor(cur / COLS)];
+}
+
+// Self-checks that run on load: catch an unwinnable level immediately.
+console.assert(nextStep(START_C, START_R, EXIT_C, EXIT_R) !== null, 'Exit unreachable from start');
+for (const [c, r] of ORB_CELLS) {
+  console.assert(!isWallCell(c, r) && nextStep(START_C, START_R, c, r) !== null, `Orb at ${c},${r} unreachable`);
+}
+console.assert(nextStep(0, 0, 1, 1) === null, 'Path from inside a wall should fail');
+
+// ---------- Renderer / scene ----------
+const canvas = document.getElementById('c');
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch });
+// Cap pixel ratio: a 3x phone screen would otherwise render 9x the pixels for little visual gain.
+renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+scene.fog = new THREE.FogExp2(0x000000, 0.12);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 60);
+camera.rotation.order = 'YXZ'; // yaw then pitch, so looking up/down never rolls the horizon
+scene.add(camera);
+scene.add(new THREE.AmbientLight(0x223344, 0.4)); // faint, so the dark is scary but not unplayable
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+const flashlight = new THREE.SpotLight(0xffeedd, 180, 0, 0.5, 0.5, 2);
+camera.add(flashlight, flashlight.target);
+flashlight.target.position.set(0, 0, -1);
+
+function noiseTexture(base, variance, repeatX = 1, repeatY = 1) {
+  const s = 128, cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const g = cv.getContext('2d'), img = g.createImageData(s, s);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = base + (Math.random() - 0.5) * variance;
+    img.data[i] = v; img.data[i + 1] = v * 0.95; img.data[i + 2] = v * 0.9; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeatX, repeatY);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Walls: one InstancedMesh = one draw call for all walls instead of one per wall.
+const wallCells = [];
+MAP.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') wallCells.push([c, r]); }));
+const walls = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(CELL, WALL_H, CELL),
+  new THREE.MeshStandardMaterial({ map: noiseTexture(90, 60), roughness: 0.95 }),
+  wallCells.length);
+const m4 = new THREE.Matrix4();
+wallCells.forEach(([c, r], i) => walls.setMatrixAt(i, m4.makeTranslation(centerOf(c), WALL_H / 2, centerOf(r))));
+scene.add(walls);
+
+for (const [y, rot, tex] of [[0, -Math.PI / 2, noiseTexture(60, 40, COLS, ROWS)], [WALL_H, Math.PI / 2, noiseTexture(40, 20, COLS, ROWS)]]) {
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(COLS * CELL, ROWS * CELL),
+                               new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+  plane.rotation.x = rot;
+  plane.position.set(COLS * CELL / 2, y, ROWS * CELL / 2);
+  scene.add(plane);
+}
+
+// Orbs
+const orbs = ORB_CELLS.map(([c, r]) => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: 0x66ccff, emissiveIntensity: 2 })));
+  g.add(new THREE.PointLight(0x66ccff, 6, 8));
+  g.position.set(centerOf(c), 1.2, centerOf(r));
+  scene.add(g);
+  return g;
+});
+
+// Exit pillar: red = locked, green = unlocked
+const exitMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xaa0000, emissiveIntensity: 1.5 });
+const exitMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, WALL_H, 16), exitMat);
+exitMesh.position.set(centerOf(EXIT_C), WALL_H / 2, centerOf(EXIT_R));
+scene.add(exitMesh);
+
+// Enemy: a tall dark figure with glowing eyes (visible through fog even when the body isn't)
+const enemy = new THREE.Group();
+enemy.add(new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 2.4, 10),
+          new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 })));
+for (const x of [-0.14, 0.14]) {
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8),
+              new THREE.MeshBasicMaterial({ color: 0xff2200 }));
+  eye.position.set(x, 0.8, 0.4);
+  enemy.add(eye);
+}
+scene.add(enemy);
+
+// ---------- Input ----------
+let yaw = 0, pitch = 0;
+const keys = new Set();
+const stick = { x: 0, y: 0 };
+addEventListener('keydown', e => keys.add(e.code));
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear()); // otherwise alt-tabbing leaves a key "stuck" down
+
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== canvas) return;
+  yaw -= e.movementX * 0.0022;
+  pitch = clamp(pitch - e.movementY * 0.0022, -1.4, 1.4);
+});
+
+const touches = new Map(); // pointerId -> { role, sx, sy, lx, ly }
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  const role = e.clientX < innerWidth / 2 ? 'move' : 'look';
+  if ([...touches.values()].some(t => t.role === role)) return; // one finger per role
+  touches.set(e.pointerId, { role, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  const t = touches.get(e.pointerId);
+  if (!t) return;
+  if (t.role === 'move') {
+    stick.x = clamp((e.clientX - t.sx) / 60, -1, 1);
+    stick.y = clamp((e.clientY - t.sy) / 60, -1, 1);
+  } else {
+    yaw -= (e.clientX - t.lx) * 0.005;
+    pitch = clamp(pitch - (e.clientY - t.ly) * 0.005, -1.4, 1.4);
+    t.lx = e.clientX; t.ly = e.clientY;
+  }
+});
+const endTouch = e => {
+  const t = touches.get(e.pointerId);
+  if (!t) return;
+  if (t.role === 'move') stick.x = stick.y = 0;
+  touches.delete(e.pointerId);
+};
+canvas.addEventListener('pointerup', endTouch);
+canvas.addEventListener('pointercancel', endTouch);
+
+// ---------- Audio (needs a user gesture to start, per browser autoplay rules) ----------
+let audio = null;
+function startAudio() {
+  if (audio) { audio.ctx.resume(); return; }
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sawtooth'; osc.frequency.value = 48; gain.gain.value = 0;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    audio = { ctx, gain };
+  } catch { audio = null; } // audio is optional; never let it break the game
+}
+const setDrone = level => audio && audio.gain.gain.setTargetAtTime(level, audio.ctx.currentTime, 0.1);
+
+// ---------- Game state ----------
+const $ = id => document.getElementById(id);
+const overlay = $('overlay'), toastEl = $('toast');
+let state = 'menu'; // menu | play | paused | over
+let collected = 0, stamina = 1, bobT = 0, graceLeft = 0, repath = 0, enemySpeed = 2.4, toastTimer = 0;
+const player = { x: 0, z: 0 };
+let enemyTarget = null;
+
+function toast(text, ms = 2500) {
+  toastEl.textContent = text; // textContent, never innerHTML: no injection path if text ever comes from a network peer
+  toastEl.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.style.opacity = 0; }, ms);
+}
+function showOverlay(title, msg, button) {
+  $('title').textContent = title; $('msg').textContent = msg; $('go').textContent = button;
+  overlay.classList.remove('hidden');
+}
+function updateHud() { $('orbs').textContent = `Orbs ${collected}/${ORB_CELLS.length}`; }
+
+function reset() {
+  collected = 0; stamina = 1; graceLeft = 6; enemySpeed = 2.4; repath = 0; enemyTarget = null;
+  player.x = centerOf(START_C); player.z = centerOf(START_R);
+  yaw = 0; pitch = 0;
+  enemy.position.set(centerOf(ENEMY_SPAWN[0]), 1.2, centerOf(ENEMY_SPAWN[1]));
+  orbs.forEach(o => { o.visible = true; });
+  exitMat.emissive.set(0xaa0000);
+  updateHud();
+}
+
+function lockPointer() {
+  if (isTouch) return;
+  // Some browsers return a promise that rejects (e.g. user pressed Esc too quickly); ignore it.
+  Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+}
+$('go').addEventListener('click', () => {
+  startAudio();
+  if (state !== 'paused') reset();
+  state = 'play';
+  overlay.classList.add('hidden');
+  lockPointer();
+  if (collected === 0 && graceLeft > 0) toast('Something else is in here...');
+});
+document.addEventListener('pointerlockchange', () => {
+  if (state === 'play' && !isTouch && !document.pointerLockElement) {
+    state = 'paused';
+    showOverlay('PAUSED', 'Click to resume.', 'Resume');
+  }
+});
+
+function endGame(won) {
+  state = 'over';
+  setDrone(0);
+  if (document.pointerLockElement) document.exitPointerLock();
+  showOverlay(won ? 'YOU ESCAPED' : 'IT FOUND YOU', won ? 'You made it out. This time.' : 'The dark closes in.', 'Try again');
+}
+
+// ---------- Update ----------
+function movePlayer(dt) {
+  let f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y;
+  let s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x;
+  const len = Math.hypot(f, s);
+  if (len > 1) { f /= len; s /= len; } // diagonal movement must not be faster
+  const moving = len > 0.05;
+
+  const wantSprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.95;
+  const sprinting = wantSprint && moving && stamina > 0.05;
+  stamina = clamp(stamina + (sprinting ? -0.3 : 0.15) * dt, 0, 1);
+  $('stamFill').style.width = `${stamina * 100}%`;
+
+  const speed = sprinting ? 5 : 3;
+  const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed * dt;
+  const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed * dt;
+  // Resolve axes separately so the player slides along walls instead of sticking to them.
+  if (!collides(player.x + dx, player.z)) player.x += dx;
+  if (!collides(player.x, player.z + dz)) player.z += dz;
+
+  if (moving) bobT += dt * (sprinting ? 12 : 8);
+}
+
+function updateEnemy(dt) {
+  if (graceLeft > 0) { graceLeft -= dt; return; }
+  repath -= dt;
+  if (repath <= 0) { // re-plan a few times per second, not every frame
+    repath = 0.35;
+    enemyTarget = nextStep(cellOf(enemy.position.x), cellOf(enemy.position.z), cellOf(player.x), cellOf(player.z));
+  }
+  // No next cell means same cell as player (or unreachable): chase directly.
+  const tx = enemyTarget ? centerOf(enemyTarget[0]) : player.x;
+  const tz = enemyTarget ? centerOf(enemyTarget[1]) : player.z;
+  const d = Math.hypot(tx - enemy.position.x, tz - enemy.position.z);
+  if (d > 0.01) {
+    const step = Math.min(d, enemySpeed * dt);
+    enemy.position.x += (tx - enemy.position.x) / d * step;
+    enemy.position.z += (tz - enemy.position.z) / d * step;
+  }
+  enemy.rotation.y = Math.atan2(player.x - enemy.position.x, player.z - enemy.position.z);
+}
+
+function updatePickups(t) {
+  orbs.forEach((o, i) => {
+    if (!o.visible) return;
+    o.position.y = 1.2 + Math.sin(t * 2 + i) * 0.1;
+    if (Math.hypot(o.position.x - player.x, o.position.z - player.z) < 1.2) {
+      o.visible = false;
+      collected++;
+      enemySpeed += 0.4; // each orb makes the hunter faster
+      updateHud();
+      if (collected === ORB_CELLS.length) { exitMat.emissive.set(0x00cc44); toast('The exit is open. Run.'); }
+      else toast('It heard that...');
+    }
+  });
+  if (Math.hypot(exitMesh.position.x - player.x, exitMesh.position.z - player.z) < 1.6) {
+    if (collected === ORB_CELLS.length) endGame(true);
+    else toast(`The way is sealed. ${ORB_CELLS.length - collected} orb(s) left.`, 1500);
+  }
+}
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05); // clamp so a background tab can't cause a giant teleporting step
+  const t = clock.elapsedTime;
+  if (state === 'play') {
+    movePlayer(dt);
+    updateEnemy(dt);
+    updatePickups(t);
+
+    const dist = Math.hypot(enemy.position.x - player.x, enemy.position.z - player.z);
+    const danger = clamp(1 - dist / (CELL * 5), 0, 1);
+    setDrone(0.02 + 0.12 * danger);
+    // Flashlight stutters as the enemy gets close.
+    flashlight.intensity = danger > 0.5 && Math.random() < (danger - 0.5) * 0.3 ? 30 : 180;
+    if (dist < 1.0 && graceLeft <= 0) endGame(false);
+  }
+  camera.position.set(player.x, EYE + Math.sin(bobT) * 0.04, player.z);
+  camera.rotation.set(pitch, yaw, 0);
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
