@@ -3,183 +3,205 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Empty 3D World</title>
+  <title>St. Marrow - Autonomous AI Studio Console</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #000;
-      font-family: monospace;
+    :root {
+      --bg: #0f1115;
+      --panel-bg: #181b22;
+      --border: #2f3542;
+      --accent: #ff4757;
+      --success: #2ed573;
+      --text: #f1f2f6;
+      --text-sub: #a4b0be;
     }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-    }
-    #hud {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      color: #00ffcc;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 12px 16px;
-      border: 1px solid #00ffcc;
-      border-radius: 4px;
-      font-size: 13px;
-      pointer-events: none;
-      line-height: 1.5;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', Courier, monospace; }
+    body { background: var(--bg); color: var(--text); padding: 20px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+    h1 { font-size: 20px; color: var(--accent); letter-spacing: 2px; }
+    .status-badge { background: rgba(46, 213, 115, 0.1); color: var(--success); padding: 6px 12px; border: 1px solid var(--success); border-radius: 4px; font-size: 12px; }
+
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; overflow: hidden; }
+    .panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-title { font-size: 14px; font-weight: bold; margin-bottom: 12px; color: var(--text-sub); display: flex; justify-content: space-between; align-items: center; }
+
+    /* Custom Tags Styling as requested */
+    cpp, py { display: block; background: #0a0c10; border: 1px solid var(--border); border-radius: 4px; padding: 12px; font-size: 12px; color: #70a1ff; overflow-x: auto; white-space: pre; margin-bottom: 12px; max-height: 220px; overflow-y: auto; }
+    py { color: #ffa502; }
+
+    .logs { flex: 1; background: #050608; border: 1px solid var(--border); border-radius: 4px; padding: 10px; font-size: 11px; overflow-y: auto; color: #2ed573; line-height: 1.4; }
+    .controls { display: flex; gap: 10px; margin-top: 12px; }
+    button { background: var(--accent); color: #fff; border: none; padding: 10px 16px; font-weight: bold; cursor: pointer; border-radius: 4px; flex: 1; text-transform: uppercase; letter-spacing: 1px; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #3742fa; }
+
+    /* Play Preview Screen */
+    .preview-screen { flex: 1; background: #000; border: 1px solid var(--border); border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .preview-overlay { position: absolute; top: 10px; left: 10px; font-size: 11px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 3px; color: #00ffcc; }
   </style>
 </head>
 <body>
 
-  <div id="hud">
-    3D ENGINE: EMPTY WORLD<br>
-    MOVE: W, A, S, D<br>
-    LOOK: Click & Drag Mouse<br>
-    POS: <span id="pos">X: 0, Y: 0, Z: 0</span>
+  <header>
+    <h1>ST. MARROW // 24-HR AUTONOMOUS AI STUDIO</h1>
+    <div class="status-badge" id="studioStatus">STATUS: RUNNING (Hour 01/24)</div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Left Column: Source Code Inspection via Custom Tags -->
+    <div class="panel">
+      <div class="panel-title"><span>AI Neural Engine & Script Code Containers</span></div>
+      
+      <label style="font-size:11px; color:var(--text-sub); margin-bottom:4px;">[Agent Alpha / Beta Unity Script - C++]</label>
+      <cpp>
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;string&gt;
+
+class HorrorAIEnvironment {
+public:
+    int agentScore = 0;
+    std::string currentTask = "Procedural Horror Forest Generation";
+
+    void evaluateAction(bool success) {
+        if (success) {
+            agentScore += 1; // +1 Rule Reward
+            std::cout &lt;&lt; "[+1 REWARD] Action validated. Score: " &lt;&lt; agentScore &lt;&lt; std::endl;
+        } else {
+            agentScore -= 1; // -1 Rule Punishment
+            std::cout &lt;&lt; "[-1 PUNISHMENT] Inactivity or error detected. Score: " &lt;&lt; agentScore &lt;&lt; std::endl;
+        }
+    }
+};
+      </cpp>
+
+      <label style="font-size:11px; color:var(--text-sub); margin-bottom:4px;">[Studio Controller & Web Search Pipeline - Python]</label>
+      <py>
+import time
+import subprocess
+import requests
+
+class AutonomousStudioController:
+    def __init__(self):
+        self.deadline_hours = 24
+        self.active_agents = ["Agent_Alpha_Blender", "Agent_Beta_Unity"]
+
+    def google_search_documentation(self, query):
+        print(f"[AI WEB SEARCH] Querying Google for asset pipeline: {query}")
+        return "Found Unity/Blender documentation: Use vertex shaders for shadow creaking."
+
+    def execute_audio_pipeline(self):
+        print("[AUDIO LIB] Loading footstep creak and ambient wind triggers into Unity scene.")
+
+if __name__ == "__main__":
+    studio = AutonomousStudioController()
+    studio.google_search_documentation("procedural horror animation vertex displacement unity")
+      </py>
+
+      <div class="panel-title" style="margin-top: 10px;"><span>Live Autonomous Action Logs</span></div>
+      <div class="logs" id="logConsole">
+        [00:00:01] Studio Controller Initialized for St. Marrow.
+        [00:00:03] Agent Alpha connected to Blender pipeline.
+        [00:00:05] Agent Beta connected to Unity Editor workspace.
+      </div>
+    </div>
+
+    <!-- Right Column: Live Play Preview & Scoreboard -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>Live Play Mode Preview</span>
+        <span id="scoreDisplay" style="color:var(--success);">Alpha Score: +4 | Beta Score: +3</span>
+      </div>
+      
+      <div class="preview-screen" id="previewContainer">
+        <div class="preview-overlay">UNITY ENGINE VIEWPORT // RENDERING HORROR ASSETS</div>
+        <!-- Simulated 3D Render Canvas / Viewport -->
+        <canvas id="gameCanvas" width="500" height="320" style="width:100%; height:100%; background:#07090e;"></canvas>
+      </div>
+
+      <div class="controls">
+        <button onclick="togglePlayMode()">Toggle Unity Play Mode</button>
+        <button class="secondary" onclick="triggerManualAiStep()">Force AI Iteration</button>
+      </div>
+    </div>
   </div>
 
-  <canvas id="worldCanvas"></canvas>
-
   <script>
-    const canvas = document.getElementById('worldCanvas');
+    // Canvas simulation of AI building the horror game
+    const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    let alphaScore = 4;
+    let betaScore = 3;
+    let isPlaying = false;
+    let frame = 0;
 
-    function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // Camera structure
-    let camera = {
-      x: 0,
-      y: 2,
-      z: -10,
-      pitch: 0,
-      yaw: 0
-    };
-
-    let keys = {};
-    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-    let isMouseDown = false;
-    let mouseX = 0, mouseY = 0;
-
-    window.addEventListener('mousedown', e => {
-      isMouseDown = true;
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-    });
-
-    window.addEventListener('mouseup', () => isMouseDown = false);
-
-    window.addEventListener('mousemove', e => {
-      if (!isMouseDown) return;
-      let dx = e.clientX - mouseX;
-      let dy = e.clientY - mouseY;
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-
-      camera.yaw += dx * 0.003;
-      camera.pitch -= dy * 0.003;
-      camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
-    });
-
-    // 3D Line Projector Math Engine
-    function project(x, y, z) {
-      // Translate relative to camera
-      let dx = x - camera.x;
-      let dy = y - camera.y;
-      let dz = z - camera.z;
-
-      // Rotate around Y axis (Yaw)
-      let cosY = Math.cos(-camera.yaw), sinY = Math.sin(-camera.yaw);
-      let x1 = dx * cosY - dz * sinY;
-      let z1 = dx * sinY + dz * cosY;
-      let y1 = dy;
-
-      // Rotate around X axis (Pitch)
-      let cosP = Math.cos(-camera.pitch), sinP = Math.sin(-camera.pitch);
-      let y2 = y1 * cosP - z1 * sinP;
-      let z2 = y1 * sinP + z1 * cosP;
-      let x2 = x1;
-
-      if (z2 <= 0.1) return null; // Behind camera clipping
-
-      let fov = canvas.width;
-      let px = (x2 / z2) * fov + canvas.width / 2;
-      let py = (y2 / z2) * fov + canvas.height / 2;
-
-      return { x: px, y: py, scale: 1 / z2 };
+    function log(msg) {
+      const c = document.getElementById('logConsole');
+      c.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+      c.scrollTop = c.scrollHeight;
     }
 
-    // Generate grid lines for the empty 3D world space
-    let gridLines = [];
-    for (let i = -50; i <= 50; i += 5) {
-      gridLines.push({ x1: i, y1: 0, z1: -50, x2: i, y2: 0, z2: 50 }); // Longitudinal lines
-      gridLines.push({ x1: -50, y1: 0, z1: i, x2: 50, y2: 0, z2: i }); // Latitudinal lines
-    }
-
-    function update() {
-      let speed = 0.15;
-      let forwardX = Math.sin(camera.yaw) * speed;
-      let forwardZ = Math.cos(camera.yaw) * speed;
-      let rightX = Math.sin(camera.yaw + Math.PI / 2) * speed;
-      let rightZ = Math.cos(camera.yaw + Math.PI / 2) * speed;
-
-      if (keys['w']) { camera.x += forwardX; camera.z += forwardZ; }
-      if (keys['s']) { camera.x -= forwardX; camera.z -= forwardZ; }
-      if (keys['a']) { camera.x -= rightX; camera.z -= rightZ; }
-      if (keys['d']) { camera.x += rightX; camera.z += rightZ; }
-
-      document.getElementById('pos').innerText = 
-        `X: ${camera.x.toFixed(1)}, Y: ${camera.y.toFixed(1)}, Z: ${camera.z.toFixed(1)}`;
-    }
-
-    function render() {
-      ctx.fillStyle = '#050505';
+    function renderScene() {
+      ctx.fillStyle = '#07090e';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Draw horizon reference grid
-      ctx.strokeStyle = '#00ffcc22';
-      ctx.lineWidth = 1;
-
-      gridLines.forEach(line => {
-        let p1 = project(line.x1, line.y1, line.z1);
-        let p2 = project(line.x2, line.y2, line.z2);
-
-        if (p1 && p2) {
+      if (isPlaying) {
+        // Draw procedural horror trees and dark corridor generated by AI
+        ctx.strokeStyle = '#2f3542';
+        ctx.lineWidth = 2;
+        
+        // Render eerie trees
+        for (let i = 50; i < canvas.width; i += 100) {
           ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
+          ctx.moveTo(i, canvas.height);
+          ctx.lineTo(i + Math.sin(frame * 0.05 + i) * 10, canvas.height - 120);
           ctx.stroke();
         }
-      });
 
-      // Draw origin center marker (3D axes lines)
-      let origin = project(0, 0, 0);
-      let xAxis = project(5, 0, 0);
-      let yAxis = project(0, 5, 0);
-      let zAxis = project(0, 0, 5);
+        // Render creeping shadow entity
+        ctx.fillStyle = 'rgba(255, 71, 87, 0.15)';
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2 + Math.sin(frame * 0.03) * 60, canvas.height / 2, 40 + Math.sin(frame * 0.1) * 10, 0, Math.PI * 2);
+        ctx.fill();
 
-      if (origin) {
-        if (xAxis) { ctx.strokeStyle = '#ff3333'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(xAxis.x, xAxis.y); ctx.stroke(); }
-        if (yAxis) { ctx.strokeStyle = '#33ff33'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(yAxis.x, yAxis.y); ctx.stroke(); }
-        if (zAxis) { ctx.strokeStyle = '#3333ff'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(zAxis.x, zAxis.y); ctx.stroke(); }
+        frame++;
+      } else {
+        ctx.fillStyle = '#a4b0be';
+        ctx.font = '12px Courier New';
+        ctx.fillText('PAUSED - Click "Toggle Unity Play Mode" to inspect live build', 30, canvas.height / 2);
       }
+      requestAnimationFrame(renderScene);
+    }
+    renderScene();
+
+    function togglePlayMode() {
+      isPlaying = !isPlaying;
+      log(isPlaying ? "Unity Play Mode activated. Streaming real-time AI build." : "Play mode paused.");
     }
 
-    function loop() {
-      update();
-      render();
-      requestAnimationFrame(loop);
+    function triggerManualAiStep() {
+      // Apply rule: Randomly reward or punish based on simulated action
+      if (Math.random() > 0.3) {
+        alphaScore += 1;
+        log("[+1 REWARD] Agent Alpha successfully compiled new Blender horror asset tree mesh.");
+      } else {
+        betaScore -= 1;
+        log("[-1 PUNISHMENT] Agent Beta stalled on lighting shader compilation. Applying penalty.");
+      }
+      document.getElementById('scoreDisplay').innerText = `Alpha Score: ${alphaScore >= 0 ? '+' : ''}${alphaScore} | Beta Score: ${betaScore >= 0 ? '+' : ''}${betaScore}`;
     }
 
-    loop();
+    // Autonomous background loop simulating the 24-hr process
+    setInterval(() => {
+      const actions = [
+        "Agent Alpha searched Google: 'Unity HDRP volumetric fog setup for dark hallways'",
+        "Audio Library loaded footstep_wood_creak.wav into Unity asset database",
+        "Agent Beta verified physics collision box on asylum corridor wall",
+        "AI Neural net updated weights following +1 reward confirmation"
+      ];
+      const randomAction = actions[Math.floor(Math.random() * actions.length)];
+      log(randomAction);
+    }, 7000);
   </script>
 </body>
 </html>
