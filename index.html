@@ -1,401 +1,305 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>The Hollow</title>
+<title>Orb Runner 3D</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; color: #ddd; }
-  /* touch-action:none stops the browser scrolling/zooming while the player drags the screen. */
-  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-  #hud { position: fixed; top: 12px; left: 12px; pointer-events: none; text-shadow: 0 0 4px #000; }
-  #stam { width: 120px; height: 6px; background: #222; margin-top: 6px; }
-  #stamFill { height: 100%; width: 100%; background: #9ab; }
-  #toast { position: fixed; bottom: 18%; width: 100%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .4s; }
-  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
-             justify-content: center; background: rgba(0,0,0,.85); text-align: center; padding: 1rem; }
-  #overlay.hidden { display: none; }
-  h1 { letter-spacing: .3em; color: #a22; margin: 0 0 .5rem; }
-  button { font-size: 1.1rem; padding: .7rem 2rem; margin-top: 1rem; background: #411; color: #eee; border: 1px solid #a22; cursor: pointer; }
+  html, body { margin: 0; overflow: hidden; background: #000; }
+  #hud { position: fixed; top: 12px; left: 12px; color: #dde6ff;
+         font: 16px monospace; text-shadow: 0 0 6px #000; pointer-events: none; }
 </style>
-<!-- Pinned version: an unpinned CDN URL could change under you or be tampered with. -->
+<!-- Version is pinned so a CDN update can't silently break the game.
+     For production, bundle/self-host instead of trusting a third-party CDN at runtime. -->
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
 </script>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="hud"><div id="orbs">Orbs 0/3</div><div id="stam"><div id="stamFill"></div></div></div>
-<div id="toast"></div>
-<div id="overlay">
-  <h1 id="title">THE HOLLOW</h1>
-  <p id="msg">Find 3 orbs. Unlock the exit. Don't let it catch you.<br>
-     Desktop: WASD + mouse, Shift to sprint. Touch: left thumb moves, right thumb looks.</p>
-  <button id="go">Enter</button>
-</div>
-
+<div id="hud"></div>
 <script type="module">
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-// ---------- Level data ----------
-// '#' wall, '.' floor, 'P' player start, 'E' exit. Coordinates are (col, row).
-const MAP = [
-  "###############",
-  "#P....#.......#",
-  "#.###.#.#####.#",
-  "#.#...#.#...#.#",
-  "#.#.###.#.#.#.#",
-  "#.#.....#.#...#",
-  "#.#######.#####",
-  "#.......#.....#",
-  "#######.#####.#",
-  "#.....#.....#.#",
-  "#.###.#####.#.#",
-  "#.#.........#.#",
-  "#.#.#########.#",
-  "#...#........E#",
-  "###############",
-];
-const ORB_CELLS = [[1, 7], [11, 11], [11, 3]];
-const ENEMY_SPAWN = [13, 1];
-const CELL = 4, WALL_H = 3, RADIUS = 0.4, EYE = 1.6;
-const ROWS = MAP.length, COLS = MAP[0].length;
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const ARENA = 18;          // half-size of the play field
+const MAX_PARTICLES = 2000; // fixed pool: no per-frame allocation, hard cap on cost
+const DPR = window.devicePixelRatio || 1;
 
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const isWallCell = (c, r) => r < 0 || c < 0 || r >= ROWS || c >= COLS || MAP[r][c] === '#'; // out of bounds = wall, so nothing can escape
-const cellOf = v => Math.floor(v / CELL);
-const centerOf = c => (c + 0.5) * CELL;
-const blocked = (x, z) => isWallCell(cellOf(x), cellOf(z));
-// Test the four corners of the player's bounding square so they can't clip into walls.
-const collides = (x, z) => blocked(x - RADIUS, z - RADIUS) || blocked(x + RADIUS, z - RADIUS) ||
-                           blocked(x - RADIUS, z + RADIUS) || blocked(x + RADIUS, z + RADIUS);
+const PRESETS = {
+  '1': { name: 'Low',      pixelRatio: 1,                  shadow: 0,    msaa: 0, bloom: false, env: false, fog: false, burst: 12,  shake: 0 },
+  '2': { name: 'High',     pixelRatio: Math.min(DPR, 1.5), shadow: 1024, msaa: 2, bloom: false, env: true,  fog: true,  burst: 50,  shake: 0 },
+  '3': { name: 'God Pack', pixelRatio: Math.min(DPR, 2),   shadow: 4096, msaa: 4, bloom: true,  env: true,  fog: true,  burst: 200, shake: 0.35 },
+};
 
-function findCell(ch) {
-  for (let r = 0; r < ROWS; r++) { const c = MAP[r].indexOf(ch); if (c !== -1) return [c, r]; }
-  throw new Error(`Map is missing '${ch}'`); // fail loudly on a bad level instead of spawning at NaN
+/** Reflect a coordinate off ±limit. Returns [position, velocity]. Pure, so it's testable. */
+function bounceAxis(p, v, limit) {
+  if (p > limit)  return [limit, -Math.abs(v)];
+  if (p < -limit) return [-limit, Math.abs(v)];
+  return [p, v];
 }
-const [START_C, START_R] = findCell('P');
-const [EXIT_C, EXIT_R] = findCell('E');
+// Minimal self-check (prints only on failure).
+console.assert(bounceAxis(19, 3, 18)[1] === -3, 'bounce at +limit');
+console.assert(bounceAxis(-19, -3, 18)[1] === 3, 'bounce at -limit');
+console.assert(bounceAxis(5, 3, 18)[1] === 3, 'no bounce inside');
 
-// ---------- Pathfinding ----------
-// BFS on a 15x15 grid is trivial in cost. Returns the NEXT cell on the shortest path, or null.
-function nextStep(fc, fr, tc, tr) {
-  if (fc === tc && fr === tr) return null;
-  const prev = new Int32Array(ROWS * COLS).fill(-1);
-  const start = fr * COLS + fc, goal = tr * COLS + tc;
-  const queue = [start];
-  prev[start] = start;
-  for (let i = 0; i < queue.length && prev[goal] === -1; i++) { // index-walk avoids O(n) Array.shift()
-    const cur = queue[i], c = cur % COLS, r = (cur - c) / COLS;
-    for (const [dc, dr] of DIRS) {
-      const nc = c + dc, nr = r + dr;
-      if (isWallCell(nc, nr)) continue;
-      const n = nr * COLS + nc;
-      if (prev[n] !== -1) continue;
-      prev[n] = cur;
-      queue.push(n);
-    }
-  }
-  if (prev[goal] === -1) return null;
-  let cur = goal;
-  while (prev[cur] !== start) cur = prev[cur];
-  return [cur % COLS, Math.floor(cur / COLS)];
-}
+// ---------- renderer & scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+// Native antialiasing is off on purpose: MSAA is applied on the composer's
+// render target instead, so it can change per preset without recreating the context.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
 
-// Self-checks that run on load: catch an unwinnable level immediately.
-console.assert(nextStep(START_C, START_R, EXIT_C, EXIT_R) !== null, 'Exit unreachable from start');
-for (const [c, r] of ORB_CELLS) {
-  console.assert(!isWallCell(c, r) && nextStep(START_C, START_R, c, r) !== null, `Orb at ${c},${r} unreachable`);
-}
-console.assert(nextStep(0, 0, 1, 1) === null, 'Path from inside a wall should fail');
-
-// ---------- Renderer / scene ----------
-const canvas = document.getElementById('c');
-const isTouch = matchMedia('(pointer: coarse)').matches;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch });
-// Cap pixel ratio: a 3x phone screen would otherwise render 9x the pixels for little visual gain.
-renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
-scene.fog = new THREE.FogExp2(0x000000, 0.12);
-const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 60);
-camera.rotation.order = 'YXZ'; // yaw then pitch, so looking up/down never rolls the horizon
-scene.add(camera);
-scene.add(new THREE.AmbientLight(0x223344, 0.4)); // faint, so the dark is scary but not unplayable
+scene.background = new THREE.Color(0x070a16);
+const fog = new THREE.FogExp2(0x070a16, 0.02);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
 
-function resize() {
-  renderer.setSize(innerWidth, innerHeight, false);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const sun = new THREE.DirectionalLight(0xbfd4ff, 1.6);
+sun.position.set(12, 25, 10);
+Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 70 });
+sun.shadow.bias = -0.0005;
+scene.add(sun, new THREE.HemisphereLight(0x6677aa, 0x0a0a14, 0.5));
+
+const playerLight = new THREE.PointLight(0x6699ff, 25, 18); // moving light makes reflections feel alive
+scene.add(playerLight);
+
+// ---------- world objects ----------
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(ARENA * 2 + 4, ARENA * 2 + 4),
+  new THREE.MeshStandardMaterial({ color: 0x151a30, roughness: 0.3, metalness: 0.7 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(ARENA * 2, 36, 0x2a3a7a, 0x1a2250);
+grid.position.y = 0.01; // avoid z-fighting with the ground
+scene.add(grid);
+
+const player = new THREE.Mesh(
+  new THREE.SphereGeometry(0.8, 48, 32),
+  new THREE.MeshPhysicalMaterial({ color: 0x9cc4ff, metalness: 0.9, roughness: 0.15,
+                                   clearcoat: 1, emissive: 0x112244 }));
+player.castShadow = true;
+scene.add(player);
+
+const orb = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(0.55, 2),
+  new THREE.MeshStandardMaterial({ color: 0x103830, emissive: 0x20ffc0, emissiveIntensity: 2.5 }));
+orb.castShadow = true;
+scene.add(orb);
+
+const hazardGeo = new THREE.IcosahedronGeometry(0.9, 1);
+const hazardMat = new THREE.MeshStandardMaterial({ color: 0x301010, emissive: 0xff2020,
+                                                   emissiveIntensity: 2, roughness: 0.4 });
+const hazards = Array.from({ length: 5 }, () => {
+  const mesh = new THREE.Mesh(hazardGeo, hazardMat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  return { mesh, vel: new THREE.Vector3() };
+});
+
+// ---------- particles (one Points object, fixed buffers) ----------
+const pPos = new Float32Array(MAX_PARTICLES * 3);
+const pVel = new Float32Array(MAX_PARTICLES * 3);
+const pBase = new Float32Array(MAX_PARTICLES * 3);  // original color
+const pCol = new Float32Array(MAX_PARTICLES * 3);   // faded color (additive blend: black = invisible)
+const pLife = new Float32Array(MAX_PARTICLES);
+const pMax = new Float32Array(MAX_PARTICLES).fill(1);
+let pCursor = 0;
+
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
+  size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending,
+  depthWrite: false, transparent: true }));
+points.frustumCulled = false; // positions change every frame; the static bounding sphere would be wrong
+scene.add(points);
+
+function burst(origin, count, color) {
+  const c = new THREE.Color(color);
+  for (let n = 0; n < count; n++) {
+    const i = pCursor; // ring buffer: oldest particle gets recycled if the pool is full
+    pCursor = (pCursor + 1) % MAX_PARTICLES;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const speed = 3 + Math.random() * 9;
+    pPos.set([origin.x, origin.y, origin.z], i * 3);
+    pVel.set([Math.sin(phi) * Math.cos(theta) * speed,
+              Math.abs(Math.cos(phi)) * speed,
+              Math.sin(phi) * Math.sin(theta) * speed], i * 3);
+    pBase.set([c.r, c.g, c.b], i * 3);
+    pMax[i] = pLife[i] = 0.5 + Math.random() * 0.7;
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    const k = i * 3;
+    if (pLife[i] <= 0) continue;
+    pLife[i] -= dt;
+    const fade = Math.max(0, pLife[i] / pMax[i]);
+    pVel[k + 1] -= 9 * dt; // gravity
+    pPos[k] += pVel[k] * dt; pPos[k + 1] += pVel[k + 1] * dt; pPos[k + 2] += pVel[k + 2] * dt;
+    pCol[k] = pBase[k] * fade; pCol[k + 1] = pBase[k + 1] * fade; pCol[k + 2] = pBase[k + 2] * fade;
+  }
+  pGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.color.needsUpdate = true;
+}
+
+// ---------- quality presets ----------
+let preset = PRESETS['3'];
+let composer = null;
+
+function buildComposer(p) {
+  composer?.dispose?.();
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: p.msaa });
+  composer = new EffectComposer(renderer, target);
+  composer.setPixelRatio(p.pixelRatio);
+  composer.setSize(innerWidth, innerHeight);
+  composer.addPass(new RenderPass(scene, camera));
+  if (p.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.6, 0.85));
+  composer.addPass(new OutputPass()); // applies tone mapping + sRGB conversion
+}
+
+function applyPreset(p) {
+  preset = p;
+  renderer.setPixelRatio(p.pixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = p.shadow > 0;
+  sun.castShadow = p.shadow > 0;
+  if (p.shadow > 0) {
+    sun.shadow.mapSize.set(p.shadow, p.shadow);
+    sun.shadow.map?.dispose(); // force reallocation at the new size
+    sun.shadow.map = null;
+  }
+  scene.environment = p.env ? envTexture : null;
+  scene.fog = p.fog ? fog : null;
+  playerLight.visible = p.env;
+  // Materials bake in shadow/env/fog variants, so they must recompile.
+  scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
+  buildComposer(p);
+}
+
+addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-}
-addEventListener('resize', resize);
-resize();
-
-const flashlight = new THREE.SpotLight(0xffeedd, 180, 0, 0.5, 0.5, 2);
-camera.add(flashlight, flashlight.target);
-flashlight.target.position.set(0, 0, -1);
-
-function noiseTexture(base, variance, repeatX = 1, repeatY = 1) {
-  const s = 128, cv = document.createElement('canvas');
-  cv.width = cv.height = s;
-  const g = cv.getContext('2d'), img = g.createImageData(s, s);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = base + (Math.random() - 0.5) * variance;
-    img.data[i] = v; img.data[i + 1] = v * 0.95; img.data[i + 2] = v * 0.9; img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(cv);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(repeatX, repeatY);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-// Walls: one InstancedMesh = one draw call for all walls instead of one per wall.
-const wallCells = [];
-MAP.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') wallCells.push([c, r]); }));
-const walls = new THREE.InstancedMesh(
-  new THREE.BoxGeometry(CELL, WALL_H, CELL),
-  new THREE.MeshStandardMaterial({ map: noiseTexture(90, 60), roughness: 0.95 }),
-  wallCells.length);
-const m4 = new THREE.Matrix4();
-wallCells.forEach(([c, r], i) => walls.setMatrixAt(i, m4.makeTranslation(centerOf(c), WALL_H / 2, centerOf(r))));
-scene.add(walls);
-
-for (const [y, rot, tex] of [[0, -Math.PI / 2, noiseTexture(60, 40, COLS, ROWS)], [WALL_H, Math.PI / 2, noiseTexture(40, 20, COLS, ROWS)]]) {
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(COLS * CELL, ROWS * CELL),
-                               new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
-  plane.rotation.x = rot;
-  plane.position.set(COLS * CELL / 2, y, ROWS * CELL / 2);
-  scene.add(plane);
-}
-
-// Orbs
-const orbs = ORB_CELLS.map(([c, r]) => {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16),
-        new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: 0x66ccff, emissiveIntensity: 2 })));
-  g.add(new THREE.PointLight(0x66ccff, 6, 8));
-  g.position.set(centerOf(c), 1.2, centerOf(r));
-  scene.add(g);
-  return g;
+  applyPreset(preset);
 });
 
-// Exit pillar: red = locked, green = unlocked
-const exitMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xaa0000, emissiveIntensity: 1.5 });
-const exitMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, WALL_H, 16), exitMat);
-exitMesh.position.set(centerOf(EXIT_C), WALL_H / 2, centerOf(EXIT_R));
-scene.add(exitMesh);
-
-// Enemy: a tall dark figure with glowing eyes (visible through fog even when the body isn't)
-const enemy = new THREE.Group();
-enemy.add(new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 2.4, 10),
-          new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 })));
-for (const x of [-0.14, 0.14]) {
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8),
-              new THREE.MeshBasicMaterial({ color: 0xff2200 }));
-  eye.position.set(x, 0.8, 0.4);
-  enemy.add(eye);
-}
-scene.add(enemy);
-
-// ---------- Input ----------
-let yaw = 0, pitch = 0;
+// ---------- game state ----------
 const keys = new Set();
-const stick = { x: 0, y: 0 };
-addEventListener('keydown', e => keys.add(e.code));
+addEventListener('keydown', e => {
+  if (PRESETS[e.key] && PRESETS[e.key] !== preset) applyPreset(PRESETS[e.key]);
+  keys.add(e.code);
+});
 addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('blur', () => keys.clear()); // otherwise alt-tabbing leaves a key "stuck" down
+addEventListener('blur', () => keys.clear()); // otherwise keys "stick" after alt-tab
 
-document.addEventListener('mousemove', e => {
-  if (document.pointerLockElement !== canvas) return;
-  yaw -= e.movementX * 0.0022;
-  pitch = clamp(pitch - e.movementY * 0.0022, -1.4, 1.4);
-});
+const rand = (lim) => (Math.random() * 2 - 1) * lim;
+const camPos = new THREE.Vector3();
+let score = 0, shake = 0, fps = 60;
 
-const touches = new Map(); // pointerId -> { role, sx, sy, lx, ly }
-canvas.addEventListener('pointerdown', e => {
-  if (e.pointerType !== 'touch') return;
-  const role = e.clientX < innerWidth / 2 ? 'move' : 'look';
-  if ([...touches.values()].some(t => t.role === role)) return; // one finger per role
-  touches.set(e.pointerId, { role, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY });
-  canvas.setPointerCapture(e.pointerId);
-});
-canvas.addEventListener('pointermove', e => {
-  const t = touches.get(e.pointerId);
-  if (!t) return;
-  if (t.role === 'move') {
-    stick.x = clamp((e.clientX - t.sx) / 60, -1, 1);
-    stick.y = clamp((e.clientY - t.sy) / 60, -1, 1);
-  } else {
-    yaw -= (e.clientX - t.lx) * 0.005;
-    pitch = clamp(pitch - (e.clientY - t.ly) * 0.005, -1.4, 1.4);
-    t.lx = e.clientX; t.ly = e.clientY;
+function placeAwayFromPlayer(obj, minDist) {
+  // Bounded retries so a pathological case can never hang the frame.
+  for (let tries = 0; tries < 20; tries++) {
+    obj.position.set(rand(ARENA - 2), obj.position.y, rand(ARENA - 2));
+    if (obj.position.distanceTo(player.position) > minDist) return;
   }
-});
-const endTouch = e => {
-  const t = touches.get(e.pointerId);
-  if (!t) return;
-  if (t.role === 'move') stick.x = stick.y = 0;
-  touches.delete(e.pointerId);
-};
-canvas.addEventListener('pointerup', endTouch);
-canvas.addEventListener('pointercancel', endTouch);
-
-// ---------- Audio (needs a user gesture to start, per browser autoplay rules) ----------
-let audio = null;
-function startAudio() {
-  if (audio) { audio.ctx.resume(); return; }
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.type = 'sawtooth'; osc.frequency.value = 48; gain.gain.value = 0;
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    audio = { ctx, gain };
-  } catch { audio = null; } // audio is optional; never let it break the game
 }
-const setDrone = level => audio && audio.gain.gain.setTargetAtTime(level, audio.ctx.currentTime, 0.1);
-
-// ---------- Game state ----------
-const $ = id => document.getElementById(id);
-const overlay = $('overlay'), toastEl = $('toast');
-let state = 'menu'; // menu | play | paused | over
-let collected = 0, stamina = 1, bobT = 0, graceLeft = 0, repath = 0, enemySpeed = 2.4, toastTimer = 0;
-const player = { x: 0, z: 0 };
-let enemyTarget = null;
-
-function toast(text, ms = 2500) {
-  toastEl.textContent = text; // textContent, never innerHTML: no injection path if text ever comes from a network peer
-  toastEl.style.opacity = 1;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastEl.style.opacity = 0; }, ms);
-}
-function showOverlay(title, msg, button) {
-  $('title').textContent = title; $('msg').textContent = msg; $('go').textContent = button;
-  overlay.classList.remove('hidden');
-}
-function updateHud() { $('orbs').textContent = `Orbs ${collected}/${ORB_CELLS.length}`; }
 
 function reset() {
-  collected = 0; stamina = 1; graceLeft = 6; enemySpeed = 2.4; repath = 0; enemyTarget = null;
-  player.x = centerOf(START_C); player.z = centerOf(START_R);
-  yaw = 0; pitch = 0;
-  enemy.position.set(centerOf(ENEMY_SPAWN[0]), 1.2, centerOf(ENEMY_SPAWN[1]));
-  orbs.forEach(o => { o.visible = true; });
-  exitMat.emissive.set(0xaa0000);
-  updateHud();
-}
-
-function lockPointer() {
-  if (isTouch) return;
-  // Some browsers return a promise that rejects (e.g. user pressed Esc too quickly); ignore it.
-  Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
-}
-$('go').addEventListener('click', () => {
-  startAudio();
-  if (state !== 'paused') reset();
-  state = 'play';
-  overlay.classList.add('hidden');
-  lockPointer();
-  if (collected === 0 && graceLeft > 0) toast('Something else is in here...');
-});
-document.addEventListener('pointerlockchange', () => {
-  if (state === 'play' && !isTouch && !document.pointerLockElement) {
-    state = 'paused';
-    showOverlay('PAUSED', 'Click to resume.', 'Resume');
+  score = 0;
+  player.position.set(0, 0.8, 0);
+  placeAwayFromPlayer(orb, 6);
+  for (const h of hazards) {
+    h.mesh.position.y = 0.9;
+    placeAwayFromPlayer(h.mesh, 9);
+    const a = Math.random() * Math.PI * 2;
+    h.vel.set(Math.cos(a) * 5, 0, Math.sin(a) * 5);
   }
-});
-
-function endGame(won) {
-  state = 'over';
-  setDrone(0);
-  if (document.pointerLockElement) document.exitPointerLock();
-  showOverlay(won ? 'YOU ESCAPED' : 'IT FOUND YOU', won ? 'You made it out. This time.' : 'The dark closes in.', 'Try again');
 }
 
-// ---------- Update ----------
-function movePlayer(dt) {
-  let f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - stick.y;
-  let s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + stick.x;
-  const len = Math.hypot(f, s);
-  if (len > 1) { f /= len; s /= len; } // diagonal movement must not be faster
-  const moving = len > 0.05;
-
-  const wantSprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.95;
-  const sprinting = wantSprint && moving && stamina > 0.05;
-  stamina = clamp(stamina + (sprinting ? -0.3 : 0.15) * dt, 0, 1);
-  $('stamFill').style.width = `${stamina * 100}%`;
-
-  const speed = sprinting ? 5 : 3;
-  const dx = (-Math.sin(yaw) * f + Math.cos(yaw) * s) * speed * dt;
-  const dz = (-Math.cos(yaw) * f - Math.sin(yaw) * s) * speed * dt;
-  // Resolve axes separately so the player slides along walls instead of sticking to them.
-  if (!collides(player.x + dx, player.z)) player.x += dx;
-  if (!collides(player.x, player.z + dz)) player.z += dz;
-
-  if (moving) bobT += dt * (sprinting ? 12 : 8);
-}
-
-function updateEnemy(dt) {
-  if (graceLeft > 0) { graceLeft -= dt; return; }
-  repath -= dt;
-  if (repath <= 0) { // re-plan a few times per second, not every frame
-    repath = 0.35;
-    enemyTarget = nextStep(cellOf(enemy.position.x), cellOf(enemy.position.z), cellOf(player.x), cellOf(player.z));
+function update(dt, t) {
+  const move = new THREE.Vector3(
+    (keys.has('KeyD') || keys.has('ArrowRight')) - (keys.has('KeyA') || keys.has('ArrowLeft')), 0,
+    (keys.has('KeyS') || keys.has('ArrowDown'))  - (keys.has('KeyW') || keys.has('ArrowUp')));
+  if (move.lengthSq() > 0) { // normalize so diagonals aren't ~41% faster
+    player.position.addScaledVector(move.normalize(), 9 * dt);
+    player.rotation.z -= move.x * 9 * dt / 0.8; // roll visually matches travel distance
+    player.rotation.x += move.z * 9 * dt / 0.8;
   }
-  // No next cell means same cell as player (or unreachable): chase directly.
-  const tx = enemyTarget ? centerOf(enemyTarget[0]) : player.x;
-  const tz = enemyTarget ? centerOf(enemyTarget[1]) : player.z;
-  const d = Math.hypot(tx - enemy.position.x, tz - enemy.position.z);
-  if (d > 0.01) {
-    const step = Math.min(d, enemySpeed * dt);
-    enemy.position.x += (tx - enemy.position.x) / d * step;
-    enemy.position.z += (tz - enemy.position.z) / d * step;
-  }
-  enemy.rotation.y = Math.atan2(player.x - enemy.position.x, player.z - enemy.position.z);
-}
+  player.position.x = THREE.MathUtils.clamp(player.position.x, -ARENA, ARENA);
+  player.position.z = THREE.MathUtils.clamp(player.position.z, -ARENA, ARENA);
+  playerLight.position.set(player.position.x, 3, player.position.z);
 
-function updatePickups(t) {
-  orbs.forEach((o, i) => {
-    if (!o.visible) return;
-    o.position.y = 1.2 + Math.sin(t * 2 + i) * 0.1;
-    if (Math.hypot(o.position.x - player.x, o.position.z - player.z) < 1.2) {
-      o.visible = false;
-      collected++;
-      enemySpeed += 0.4; // each orb makes the hunter faster
-      updateHud();
-      if (collected === ORB_CELLS.length) { exitMat.emissive.set(0x00cc44); toast('The exit is open. Run.'); }
-      else toast('It heard that...');
+  orb.position.y = 1.1 + Math.sin(t * 3) * 0.25;
+  orb.rotation.y += dt * 1.5;
+
+  for (const h of hazards) {
+    const m = h.mesh;
+    m.position.addScaledVector(h.vel, dt);
+    [m.position.x, h.vel.x] = bounceAxis(m.position.x, h.vel.x, ARENA);
+    [m.position.z, h.vel.z] = bounceAxis(m.position.z, h.vel.z, ARENA);
+    m.rotation.x += dt; m.rotation.y += dt * 1.3;
+    if (m.position.distanceTo(player.position) < 1.7) {
+      burst(player.position, preset.burst * 2, 0xff4040);
+      reset();
+      return;
     }
-  });
-  if (Math.hypot(exitMesh.position.x - player.x, exitMesh.position.z - player.z) < 1.6) {
-    if (collected === ORB_CELLS.length) endGame(true);
-    else toast(`The way is sealed. ${ORB_CELLS.length - collected} orb(s) left.`, 1500);
   }
+
+  if (orb.position.distanceTo(player.position) < 1.5) {
+    score++;
+    burst(orb.position, preset.burst, 0x30ffc8);
+    shake = preset.shake;
+    placeAwayFromPlayer(orb, 6);
+  }
+  updateParticles(dt);
 }
 
-const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05); // clamp so a background tab can't cause a giant teleporting step
-  const t = clock.elapsedTime;
-  if (state === 'play') {
-    movePlayer(dt);
-    updateEnemy(dt);
-    updatePickups(t);
-
-    const dist = Math.hypot(enemy.position.x - player.x, enemy.position.z - player.z);
-    const danger = clamp(1 - dist / (CELL * 5), 0, 1);
-    setDrone(0.02 + 0.12 * danger);
-    // Flashlight stutters as the enemy gets close.
-    flashlight.intensity = danger > 0.5 && Math.random() < (danger - 0.5) * 0.3 ? 30 : 180;
-    if (dist < 1.0 && graceLeft <= 0) endGame(false);
+function updateCamera(dt) {
+  // Frame-rate independent smoothing: same feel at 30 or 144 FPS.
+  const target = new THREE.Vector3(player.position.x * 0.9, 16, player.position.z * 0.9 + 13);
+  camPos.lerp(target, 1 - Math.exp(-5 * dt));
+  camera.position.copy(camPos);
+  if (shake > 0) {
+    camera.position.add(new THREE.Vector3(rand(shake), rand(shake), rand(shake)));
+    shake = Math.max(0, shake - dt * 1.2);
   }
-  camera.position.set(player.x, EYE + Math.sin(bobT) * 0.04, player.z);
-  camera.rotation.set(pitch, yaw, 0);
-  renderer.render(scene, camera);
+  camera.lookAt(player.position);
+}
+
+// ---------- main loop ----------
+const hud = document.getElementById('hud');
+let last = performance.now(), hudTimer = 0;
+reset();
+camPos.set(0, 16, 13);
+applyPreset(preset);
+
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - last) / 1000, 0.05); // clamp after tab-switch / lag spikes
+  last = now;
+  fps += (1 / Math.max(dt, 1e-4) - fps) * 0.05;
+  update(dt, now / 1000);
+  updateCamera(dt);
+  composer.render();
+  if ((hudTimer += dt) > 0.25) { // textContent churn every frame is wasted work
+    hudTimer = 0;
+    hud.textContent = `Score ${score}   Quality: ${preset.name} [1/2/3]   FPS ${fps.toFixed(0)}`;
+  }
 });
 </script>
 </body>
 </html>
+
