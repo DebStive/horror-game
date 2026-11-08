@@ -1,391 +1,256 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Orb Runner 3D</title>
-<style>
-  html, body { margin: 0; overflow: hidden; background: #000; }
-  #hud { position: fixed; top: 12px; left: 12px; color: #dde6ff;
-         font: 16px monospace; text-shadow: 0 0 6px #000; pointer-events: none; }
-</style>
-<!-- Pinned version so a CDN update can't silently break the game.
-     For production, bundle/self-host instead of trusting a third-party CDN. -->
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-} }
-</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gamer Console</title>
+  <style>
+    :root {
+      --bg-color: #f8f9fa;
+      --header-bg: #455a64;
+      --sidebar-bg: #ffffff;
+      --border-color: #dadce0;
+      --primary: #1a73e8;
+      --text-main: #202124;
+      --text-sub: #5f6368;
+      --accent-horror: #d32f2f;
+      --accent-platformer: #00897b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    /* Top Header */
+    header { background: var(--header-bg); color: #fff; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--border-color); }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 500; }
+    .search-bar { flex: 1; max-width: 600px; margin: 0 24px; position: relative; }
+    .search-bar input { width: 100%; padding: 8px 16px; border-radius: 8px; border: none; background: rgba(255,255,255,0.15); color: #fff; outline: none; }
+    .search-bar input::placeholder { color: rgba(255,255,255,0.7); }
+
+    /* Layout */
+    .container { display: flex; flex: 1; overflow: hidden; }
+    aside { width: 240px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 12px 0; display: flex; flex-direction: column; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 24px; color: var(--text-sub); text-decoration: none; font-size: 14px; cursor: pointer; border-radius: 0 20px 20px 0; margin-right: 8px; font-weight: 500; }
+    .nav-item:hover { background: #f1f3f4; }
+    .nav-item.active { background: #e8f0fe; color: var(--primary); }
+
+    main { flex: 1; padding: 24px; overflow-y: auto; }
+    .card { background: #fff; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .card-title { font-size: 16px; font-weight: 500; color: var(--text-main); margin-bottom: 16px; }
+
+    /* Verification Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: #fff; width: 800px; max-width: 90%; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+    .modal-header { padding: 16px 24px; background: #37474f; color: #fff; font-size: 18px; font-weight: 500; }
+    .modal-body { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .property-option { border: 2px solid var(--border-color); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .property-option:hover, .property-option.selected { border-color: var(--primary); background: #f4f8fe; }
+    .property-option h3 { font-size: 16px; margin: 12px 0 8px; }
+    .property-option p { font-size: 12px; color: var(--text-sub); text-align: left; }
+    .property-option input { width: 100%; padding: 8px; margin-top: 12px; border: 1px solid var(--border-color); border-radius: 4px; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; }
+
+    /* Code Editor & Buttons */
+    textarea { width: 100%; height: 180px; font-family: monospace; padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: #272822; color: #f8f8f2; font-size: 13px; }
+    .btn { padding: 8px 16px; border-radius: 4px; border: none; font-weight: 500; cursor: pointer; background: var(--primary); color: #fff; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: var(--text-sub); border: 1px solid var(--border-color); }
+
+    /* Metric Grid */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .metric-box { background: #f8f9fa; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; text-align: center; }
+    .metric-value { font-size: 28px; font-weight: bold; margin-top: 8px; color: var(--primary); }
+    .genre-horror .metric-value { color: var(--accent-horror); }
+
+    /* Hidden Sections */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
 </head>
 <body>
-<div id="hud"></div>
-<script type="module">
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-const ARENA = 18;           // half-size of the play field
-const MAX_PARTICLES = 2000; // fixed pool: no per-frame allocation, hard cap on cost
-const DPR = window.devicePixelRatio || 1;
+  <header>
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      <span>Gamer Console</span>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="urlInspector" value="https://debstive.github.io/St.-Marrow/" readonly>
+    </div>
+  </header>
 
-const PRESETS = {
-  '1': { name: 'Low',      pixelRatio: 1,                  shadow: 0,    msaa: 0, bloom: false, env: false, fog: false, burst: 12,  shake: 0 },
-  '2': { name: 'High',     pixelRatio: Math.min(DPR, 1.5), shadow: 1024, msaa: 2, bloom: false, env: true,  fog: true,  burst: 50,  shake: 0 },
-  '3': { name: 'God Pack', pixelRatio: Math.min(DPR, 2),   shadow: 4096, msaa: 4, bloom: true,  env: true,  fog: true,  burst: 200, shake: 0.35 },
+  <div class="container">
+    <aside>
+      <div class="nav-item active" onclick="switchTab('overview', this)">Overview</div>
+      <div class="nav-item" onclick="switchTab('code-analyzer', this)">Code Analyzer</div>
+      <div class="nav-item" onclick="switchTab('telemetry', this)">SDK Workbench</div>
+      <div class="nav-item" onclick="switchTab('exporter', this)">App Exporter</div>
+    </aside>
+
+    <main>
+      <!-- OVERVIEW TAB -->
+      <div id="overview" class="tab-content active">
+        <div class="card">
+          <div class="card-title" id="gameTitle">Game Performance Overview (St. Marrow)</div>
+          <div class="metrics-grid">
+            <div class="metric-box"><div>Total Players</div><div class="metric-value" id="valPlayers">1,420</div></div>
+            <div class="metric-box"><div>Total Deaths</div><div class="metric-value" id="valDeaths">3,892</div></div>
+            <div class="metric-box"><div>Escapes / Wins</div><div class="metric-value" id="valWins">142</div></div>
+            <div class="metric-box"><div>Avg Session Time</div><div class="metric-value" id="valTime">14m 32s</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Live Event Stream</div>
+          <textarea id="eventLog" readonly style="height: 140px; background: #1e1e1e; color: #4af626;"></textarea>
+        </div>
+      </div>
+
+      <!-- CODE ANALYZER TAB -->
+      <div id="code-analyzer" class="tab-content">
+        <div class="card">
+          <div class="card-title">Paste Game Code to Inspect & Auto-Tune Analytics</div>
+          <p style="font-size: 13px; color: #666; margin-bottom: 12px;">The static analyzer parses variables (e.g. <code>sanity</code>, <code>flashlight</code>, <code>jump</code>) to automatically construct your metrics.</p>
+          <textarea id="sourceCode" placeholder="Paste JavaScript game source code here...">
+// St. Marrow - Horror Game Core Script
+const player = {
+  username: "Player1",
+  sanity: 100,
+  hasFlashlight: true
 };
 
-/**
- * Velocity after reflecting off the walls at ±limit. Returns a number (not an
- * array) so calling it every frame for every hazard allocates nothing.
- */
-function bounceVelocity(p, v, limit) {
-  if (p > limit)  return -Math.abs(v);
-  if (p < -limit) return Math.abs(v);
-  return v;
-}
-// Minimal self-checks (print only on failure).
-console.assert(bounceVelocity(19, 3, 18) === -3, 'bounce at +limit');
-console.assert(bounceVelocity(-19, -3, 18) === 3, 'bounce at -limit');
-console.assert(bounceVelocity(5, 3, 18) === 3, 'no bounce inside');
-
-// ---------- renderer & scene ----------
-// Native antialiasing is off on purpose: MSAA is applied on the composer's
-// render target instead, so it can change per preset without recreating the context.
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.body.appendChild(renderer.domElement);
-const gl = renderer.getContext();
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x070a16);
-const fog = new THREE.FogExp2(0x070a16, 0.02);
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
-
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
-const sun = new THREE.DirectionalLight(0xbfd4ff, 1.6);
-sun.position.set(12, 25, 10);
-Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 70 });
-sun.shadow.bias = -0.0005;
-scene.add(sun, new THREE.HemisphereLight(0x6677aa, 0x0a0a14, 0.5));
-
-const playerLight = new THREE.PointLight(0x6699ff, 25, 18); // moving light makes reflections feel alive
-scene.add(playerLight);
-
-// ---------- world objects ----------
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(ARENA * 2 + 4, ARENA * 2 + 4),
-  new THREE.MeshStandardMaterial({ color: 0x151a30, roughness: 0.3, metalness: 0.7 }));
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-const grid = new THREE.GridHelper(ARENA * 2, 36, 0x2a3a7a, 0x1a2250);
-grid.position.y = 0.01; // avoid z-fighting with the ground
-scene.add(grid);
-
-const player = new THREE.Mesh(
-  new THREE.SphereGeometry(0.8, 48, 32),
-  new THREE.MeshPhysicalMaterial({ color: 0x9cc4ff, metalness: 0.9, roughness: 0.15,
-                                   clearcoat: 1, emissive: 0x112244 }));
-player.castShadow = true;
-scene.add(player);
-
-const orb = new THREE.Mesh(
-  new THREE.IcosahedronGeometry(0.55, 2),
-  new THREE.MeshStandardMaterial({ color: 0x103830, emissive: 0x20ffc0, emissiveIntensity: 2.5 }));
-orb.castShadow = true;
-scene.add(orb);
-
-const hazardGeo = new THREE.IcosahedronGeometry(0.9, 1);
-const hazardMat = new THREE.MeshStandardMaterial({ color: 0x301010, emissive: 0xff2020,
-                                                   emissiveIntensity: 2, roughness: 0.4 });
-const hazards = Array.from({ length: 5 }, () => {
-  const mesh = new THREE.Mesh(hazardGeo, hazardMat);
-  mesh.castShadow = true;
-  scene.add(mesh);
-  return { mesh, vel: new THREE.Vector3() };
-});
-
-// ---------- particles: one Points object, compact fixed buffers ----------
-// Live particles occupy indices [0, pCount). Dead ones are swap-removed, so
-// per-frame cost is O(active) rather than O(MAX_PARTICLES).
-const pPos  = new Float32Array(MAX_PARTICLES * 3);
-const pVel  = new Float32Array(MAX_PARTICLES * 3);
-const pBase = new Float32Array(MAX_PARTICLES * 3); // original color
-const pCol  = new Float32Array(MAX_PARTICLES * 3); // faded color (additive blend: black = invisible)
-const pLife = new Float32Array(MAX_PARTICLES);
-const pMax  = new Float32Array(MAX_PARTICLES).fill(1);
-let pCount = 0;
-
-const pGeo = new THREE.BufferGeometry();
-pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
-pGeo.setDrawRange(0, 0);
-const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
-  size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending,
-  depthWrite: false, transparent: true }));
-points.frustumCulled = false; // positions change every frame; the static bounding sphere would be wrong
-scene.add(points);
-
-const tmpColor = new THREE.Color();
-
-function burst(origin, count, color) {
-  tmpColor.set(color);
-  // If the pool is full we drop new particles instead of recycling: it keeps
-  // the cost bounded and the visual difference at 2000 live particles is nil.
-  const n = Math.min(count, MAX_PARTICLES - pCount);
-  for (let j = 0; j < n; j++) {
-    const i = pCount++;
-    const k = i * 3;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const speed = 3 + Math.random() * 9;
-    pPos[k] = origin.x; pPos[k + 1] = origin.y; pPos[k + 2] = origin.z;
-    pVel[k]     = Math.sin(phi) * Math.cos(theta) * speed;
-    pVel[k + 1] = Math.abs(Math.cos(phi)) * speed; // bias upward so bursts fountain
-    pVel[k + 2] = Math.sin(phi) * Math.sin(theta) * speed;
-    pBase[k] = tmpColor.r; pBase[k + 1] = tmpColor.g; pBase[k + 2] = tmpColor.b;
-    pMax[i] = pLife[i] = 0.5 + Math.random() * 0.7;
-  }
+function onMonsterCatch() {
+  gameConsole.capture('player_died', { cause: 'Shadow_Specter', room: 'Asylum_Basement' });
 }
 
-function moveParticle(from, to) {
-  const a = from * 3, b = to * 3;
-  for (let c = 0; c < 3; c++) {
-    pPos[b + c] = pPos[a + c]; pVel[b + c] = pVel[a + c];
-    pBase[b + c] = pBase[a + c]; pCol[b + c] = pCol[a + c];
-  }
-  pLife[to] = pLife[from]; pMax[to] = pMax[from];
+function onEscape() {
+  gameConsole.capture('level_completed', { level: 1, score: 9900 });
 }
+          </textarea>
+          <button class="btn" style="margin-top: 12px;" onclick="analyzeCode()">Run Live Code Inspection</button>
+        </div>
+      </div>
 
-function updateParticles(dt) {
-  let i = 0;
-  while (i < pCount) {
-    pLife[i] -= dt;
-    if (pLife[i] <= 0) {
-      // Swap-remove: pull the last live particle into this slot and re-check
-      // index i without advancing (the moved particle hasn't been updated yet).
-      pCount--;
-      if (i !== pCount) moveParticle(pCount, i);
-      continue;
+      <!-- TELEMETRY SDK TAB -->
+      <div id="telemetry" class="tab-content">
+        <div class="card">
+          <div class="card-title">SDK Console (Execute Live Code)</div>
+          <textarea id="sdkCode">
+gameConsole.identify('player_99', { username: 'HorrorFanatic', level: 3 });
+gameConsole.capture('player_died', { cause: 'Shadow_Specter', room: 'Hallway_B' });
+          </textarea>
+          <button class="btn" style="margin-top: 12px;" onclick="runSDK()">Run Code</button>
+        </div>
+      </div>
+
+      <!-- EXPORTER TAB -->
+      <div id="exporter" class="tab-content">
+        <div class="card">
+          <div class="card-title">Download Executable Desktop & Web Packages</div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+            <button class="btn" onclick="exportApp('exe')">Download Windows (.exe)</button>
+            <button class="btn" onclick="exportApp('dmg')">Download macOS (.dmg)</button>
+            <button class="btn" onclick="exportApp('crx')">Download Chrome Extension (.zip)</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Verification Modal -->
+  <div class="modal-overlay" id="verifyModal">
+    <div class="modal">
+      <div class="modal-header">Select property type</div>
+      <div class="modal-body">
+        <div class="property-option" onclick="selectProp('domain', this)">
+          <h3>Domain</h3>
+          <p>• All URLs across subdomains</p>
+          <p>• Requires DNS verification</p>
+          <input type="text" placeholder="example.com" id="domainInput">
+        </div>
+        <div class="property-option selected" onclick="selectProp('prefix', this)">
+          <h3>URL prefix</h3>
+          <p>• Only URLs under entered address</p>
+          <p>• Allows HTML meta tag verification</p>
+          <input type="text" value="https://debstive.github.io/St.-Marrow/" id="urlInput">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // System logic
+    const gameConsole = {
+      identify: (id, traits) => logEvent(`IDENTIFY: ${id} -> ${JSON.stringify(traits)}`),
+      capture: (event, props) => {
+        logEvent(`CAPTURE: [${event}] -> ${JSON.stringify(props)}`);
+        if(event === 'player_died') {
+          let el = document.getElementById('valDeaths');
+          el.innerText = (parseInt(el.innerText.replace(',','')) + 1).toLocaleString();
+        }
+      }
+    };
+
+    function logEvent(msg) {
+      const log = document.getElementById('eventLog');
+      log.value += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      log.scrollTop = log.scrollHeight;
     }
-    const k = i * 3;
-    const fade = pLife[i] / pMax[i];
-    pVel[k + 1] -= 9 * dt; // gravity
-    pPos[k] += pVel[k] * dt; pPos[k + 1] += pVel[k + 1] * dt; pPos[k + 2] += pVel[k + 2] * dt;
-    pCol[k] = pBase[k] * fade; pCol[k + 1] = pBase[k + 1] * fade; pCol[k + 2] = pBase[k + 2] * fade;
-    i++;
-  }
-  pGeo.setDrawRange(0, pCount);
-  if (pCount > 0) {
-    pGeo.attributes.position.needsUpdate = true;
-    pGeo.attributes.color.needsUpdate = true;
-  }
-}
 
-// ---------- quality presets ----------
-let preset = PRESETS['3'];
-let composer = null;
-
-function buildComposer(p) {
-  if (composer) {
-    composer.renderTarget1.dispose();
-    composer.renderTarget2.dispose();
-  }
-  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: p.msaa });
-  composer = new EffectComposer(renderer, target);
-  composer.setPixelRatio(p.pixelRatio);
-  composer.setSize(innerWidth, innerHeight);
-  composer.addPass(new RenderPass(scene, camera));
-  if (p.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.6, 0.85));
-  composer.addPass(new OutputPass()); // applies tone mapping + sRGB conversion
-}
-
-function applyPreset(p) {
-  preset = p;
-  renderer.setPixelRatio(p.pixelRatio);
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = p.shadow > 0;
-  sun.castShadow = p.shadow > 0;
-  if (p.shadow > 0) {
-    sun.shadow.mapSize.set(p.shadow, p.shadow);
-    sun.shadow.map?.dispose(); // force reallocation at the new size
-    sun.shadow.map = null;
-  }
-  scene.environment = p.env ? envTexture : null;
-  scene.fog = p.fog ? fog : null;
-  playerLight.visible = p.env;
-  // Materials bake in shadow/env/fog variants, so they must recompile.
-  scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
-  buildComposer(p);
-}
-
-addEventListener('resize', () => {
-  // Resize buffers only; rebuilding the composer and recompiling every
-  // material on each resize event would cause visible stutter.
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-});
-
-// ---------- game state ----------
-const keys = new Set();
-const rand = (lim) => (Math.random() * 2 - 1) * lim;
-const camPos = new THREE.Vector3();
-const moveDir = new THREE.Vector3();   // reused every frame: no GC churn
-const camTarget = new THREE.Vector3();
-let score = 0, shake = 0;
-
-function placeAwayFromPlayer(obj, minDist) {
-  // Bounded retries so a pathological case can never hang the frame.
-  for (let tries = 0; tries < 20; tries++) {
-    obj.position.set(rand(ARENA - 2), obj.position.y, rand(ARENA - 2));
-    if (obj.position.distanceTo(player.position) > minDist) return;
-  }
-}
-
-function reset() {
-  score = 0;
-  player.position.set(0, 0.8, 0);
-  placeAwayFromPlayer(orb, 6);
-  for (const h of hazards) {
-    h.mesh.position.y = 0.9;
-    placeAwayFromPlayer(h.mesh, 9);
-    const a = Math.random() * Math.PI * 2;
-    h.vel.set(Math.cos(a) * 5, 0, Math.sin(a) * 5);
-  }
-}
-
-function update(dt, t) {
-  moveDir.set(
-    (keys.has('KeyD') || keys.has('ArrowRight')) - (keys.has('KeyA') || keys.has('ArrowLeft')), 0,
-    (keys.has('KeyS') || keys.has('ArrowDown'))  - (keys.has('KeyW') || keys.has('ArrowUp')));
-  if (moveDir.lengthSq() > 0) { // normalize so diagonals aren't ~41% faster
-    moveDir.normalize();
-    player.position.addScaledVector(moveDir, 9 * dt);
-    player.rotation.z -= moveDir.x * 9 * dt / 0.8; // roll matches travel distance (r = 0.8)
-    player.rotation.x += moveDir.z * 9 * dt / 0.8;
-  }
-  player.position.x = THREE.MathUtils.clamp(player.position.x, -ARENA, ARENA);
-  player.position.z = THREE.MathUtils.clamp(player.position.z, -ARENA, ARENA);
-  playerLight.position.set(player.position.x, 3, player.position.z);
-
-  orb.position.y = 1.1 + Math.sin(t * 3) * 0.25;
-  orb.rotation.y += dt * 1.5;
-
-  for (const h of hazards) {
-    const m = h.mesh;
-    m.position.addScaledVector(h.vel, dt);
-    h.vel.x = bounceVelocity(m.position.x, h.vel.x, ARENA);
-    h.vel.z = bounceVelocity(m.position.z, h.vel.z, ARENA);
-    m.position.x = THREE.MathUtils.clamp(m.position.x, -ARENA, ARENA);
-    m.position.z = THREE.MathUtils.clamp(m.position.z, -ARENA, ARENA);
-    m.rotation.x += dt; m.rotation.y += dt * 1.3;
-    if (m.position.distanceTo(player.position) < 1.7) {
-      burst(player.position, preset.burst * 2, 0xff4040);
-      reset();
-      return;
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      el.classList.add('active');
     }
-  }
 
-  if (orb.position.distanceTo(player.position) < 1.5) {
-    score++;
-    burst(orb.position, preset.burst, 0x30ffc8);
-    shake = preset.shake;
-    placeAwayFromPlayer(orb, 6);
-  }
-  updateParticles(dt);
-}
+    function closeModal() {
+      document.getElementById('verifyModal').style.display = 'none';
+      logEvent('Property verified: https://debstive.github.io/St.-Marrow/');
+    }
 
-function updateCamera(dt) {
-  camTarget.set(player.position.x * 0.9, 16, player.position.z * 0.9 + 13);
-  // Frame-rate independent smoothing: same feel at 30 or 3000 renders/s.
-  camPos.lerp(camTarget, 1 - Math.exp(-5 * dt));
-  camera.position.copy(camPos);
-  if (shake > 0) {
-    camera.position.x += rand(shake);
-    camera.position.y += rand(shake);
-    camera.position.z += rand(shake);
-    shake = Math.max(0, shake - dt * 1.2);
-  }
-  camera.lookAt(player.position);
-}
+    function selectProp(type, el) {
+      document.querySelectorAll('.property-option').forEach(p => p.classList.remove('selected'));
+      el.classList.add('selected');
+    }
 
-// ---------- main loop ----------
-const hud = document.getElementById('hud');
-let last = performance.now();
-let uncapped = false;
-let frames = 0, fpsWindowStart = last;
+    function analyzeCode() {
+      const code = document.getElementById('sourceCode').value;
+      if (code.includes('sanity') || code.includes('Horror') || code.includes('Shadow')) {
+        document.body.classList.add('genre-horror');
+        alert('Code Analysis Complete: Horror Mechanics Detected! Dashboard updated.');
+      } else {
+        alert('Code Analysis Complete: Generic JS Engine detected.');
+      }
+      switchTab('overview', document.querySelectorAll('.nav-item')[0]);
+    }
 
-function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05); // clamp after tab-switch / lag spikes
-  last = now;
-  update(dt, now / 1000);
-  updateCamera(dt);
-  composer.render();
-  // In benchmark mode, wait for the GPU so the counter measures completed
-  // frames, not commands merely queued. This costs a little throughput but
-  // keeps the number honest.
-  if (uncapped) gl.finish();
+    function runSDK() {
+      const code = document.getElementById('sdkCode').value;
+      try {
+        eval(code);
+        alert('SDK Commands Executed Successfully!');
+      } catch(e) {
+        alert('Execution Error: ' + e.message);
+      }
+    }
 
-  // Average over a 0.5 s window: stable at any rate, unlike 1/dt, which is
-  // noisy and divides by ~0 at very high frame rates.
-  frames++;
-  const elapsed = now - fpsWindowStart;
-  if (elapsed >= 500) {
-    const fps = (frames * 1000) / elapsed;
-    frames = 0;
-    fpsWindowStart = now;
-    hud.textContent = `Score ${score}   Quality: ${preset.name} [1/2/3]   ` +
-                      `[4] Benchmark: ${uncapped ? 'UNCAPPED' : 'vsync'}   Renders/s ${fps.toFixed(0)}`;
-  }
-}
+    function exportApp(type) {
+      const content = type === 'crx' 
+        ? '{"manifest_version": 3, "name": "St. Marrow", "version": "1.0"}'
+        : '@echo off\necho Running St. Marrow Game Package...';
+      
+      const blob = new Blob([content], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `St_Marrow_Build.${type === 'crx' ? 'zip' : type}`;
+      a.click();
+    }
 
-// MessageChannel re-posts immediately, so it isn't clamped like nested
-// setTimeout (>= 4 ms) and isn't tied to vsync. Input events still get
-// scheduled between messages, so keys keep working.
-const channel = new MessageChannel();
-channel.port1.onmessage = () => {
-  if (!uncapped) return; // loop ends naturally when benchmark mode is off
-  frame(performance.now());
-  channel.port2.postMessage(null);
-};
-
-function setUncapped(on) {
-  if (on === uncapped) return;
-  uncapped = on;
-  frames = 0;
-  fpsWindowStart = last = performance.now();
-  if (on) {
-    renderer.setAnimationLoop(null);   // stop the vsync-locked loop
-    channel.port2.postMessage(null);   // start the free-running loop
-  } else {
-    renderer.setAnimationLoop(frame);  // back to display-synced rendering
-  }
-}
-
-addEventListener('keydown', e => {
-  if (e.repeat) return;
-  if (PRESETS[e.key] && PRESETS[e.key] !== preset) applyPreset(PRESETS[e.key]);
-  else if (e.key === '4') setUncapped(!uncapped);
-  keys.add(e.code);
-});
-addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('blur', () => keys.clear()); // otherwise keys "stick" after alt-tab
-// Don't burn the GPU in a background tab.
-document.addEventListener('visibilitychange', () => { if (document.hidden) setUncapped(false); });
-
-reset();
-camPos.set(0, 16, 13);
-applyPreset(preset);
-renderer.setAnimationLoop(frame);
-</script>
+    // Initial setup
+    logEvent('Gamer Console Engine Initialized.');
+  </script>
 </body>
 </html>
