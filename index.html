@@ -8,8 +8,8 @@
   #hud { position: fixed; top: 12px; left: 12px; color: #dde6ff;
          font: 16px monospace; text-shadow: 0 0 6px #000; pointer-events: none; }
 </style>
-<!-- Version is pinned so a CDN update can't silently break the game.
-     For production, bundle/self-host instead of trusting a third-party CDN at runtime. -->
+<!-- Pinned version so a CDN update can't silently break the game.
+     For production, bundle/self-host instead of trusting a third-party CDN. -->
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -27,7 +27,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-const ARENA = 18;          // half-size of the play field
+const ARENA = 18;           // half-size of the play field
 const MAX_PARTICLES = 2000; // fixed pool: no per-frame allocation, hard cap on cost
 const DPR = window.devicePixelRatio || 1;
 
@@ -37,24 +37,28 @@ const PRESETS = {
   '3': { name: 'God Pack', pixelRatio: Math.min(DPR, 2),   shadow: 4096, msaa: 4, bloom: true,  env: true,  fog: true,  burst: 200, shake: 0.35 },
 };
 
-/** Reflect a coordinate off ±limit. Returns [position, velocity]. Pure, so it's testable. */
-function bounceAxis(p, v, limit) {
-  if (p > limit)  return [limit, -Math.abs(v)];
-  if (p < -limit) return [-limit, Math.abs(v)];
-  return [p, v];
+/**
+ * Velocity after reflecting off the walls at ±limit. Returns a number (not an
+ * array) so calling it every frame for every hazard allocates nothing.
+ */
+function bounceVelocity(p, v, limit) {
+  if (p > limit)  return -Math.abs(v);
+  if (p < -limit) return Math.abs(v);
+  return v;
 }
-// Minimal self-check (prints only on failure).
-console.assert(bounceAxis(19, 3, 18)[1] === -3, 'bounce at +limit');
-console.assert(bounceAxis(-19, -3, 18)[1] === 3, 'bounce at -limit');
-console.assert(bounceAxis(5, 3, 18)[1] === 3, 'no bounce inside');
+// Minimal self-checks (print only on failure).
+console.assert(bounceVelocity(19, 3, 18) === -3, 'bounce at +limit');
+console.assert(bounceVelocity(-19, -3, 18) === 3, 'bounce at -limit');
+console.assert(bounceVelocity(5, 3, 18) === 3, 'no bounce inside');
 
 // ---------- renderer & scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 // Native antialiasing is off on purpose: MSAA is applied on the composer's
 // render target instead, so it can change per preset without recreating the context.
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
+const gl = renderer.getContext();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070a16);
@@ -108,53 +112,81 @@ const hazards = Array.from({ length: 5 }, () => {
   return { mesh, vel: new THREE.Vector3() };
 });
 
-// ---------- particles (one Points object, fixed buffers) ----------
-const pPos = new Float32Array(MAX_PARTICLES * 3);
-const pVel = new Float32Array(MAX_PARTICLES * 3);
-const pBase = new Float32Array(MAX_PARTICLES * 3);  // original color
-const pCol = new Float32Array(MAX_PARTICLES * 3);   // faded color (additive blend: black = invisible)
+// ---------- particles: one Points object, compact fixed buffers ----------
+// Live particles occupy indices [0, pCount). Dead ones are swap-removed, so
+// per-frame cost is O(active) rather than O(MAX_PARTICLES).
+const pPos  = new Float32Array(MAX_PARTICLES * 3);
+const pVel  = new Float32Array(MAX_PARTICLES * 3);
+const pBase = new Float32Array(MAX_PARTICLES * 3); // original color
+const pCol  = new Float32Array(MAX_PARTICLES * 3); // faded color (additive blend: black = invisible)
 const pLife = new Float32Array(MAX_PARTICLES);
-const pMax = new Float32Array(MAX_PARTICLES).fill(1);
-let pCursor = 0;
+const pMax  = new Float32Array(MAX_PARTICLES).fill(1);
+let pCount = 0;
 
 const pGeo = new THREE.BufferGeometry();
 pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
 pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+pGeo.setDrawRange(0, 0);
 const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
   size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending,
   depthWrite: false, transparent: true }));
 points.frustumCulled = false; // positions change every frame; the static bounding sphere would be wrong
 scene.add(points);
 
+const tmpColor = new THREE.Color();
+
 function burst(origin, count, color) {
-  const c = new THREE.Color(color);
-  for (let n = 0; n < count; n++) {
-    const i = pCursor; // ring buffer: oldest particle gets recycled if the pool is full
-    pCursor = (pCursor + 1) % MAX_PARTICLES;
+  tmpColor.set(color);
+  // If the pool is full we drop new particles instead of recycling: it keeps
+  // the cost bounded and the visual difference at 2000 live particles is nil.
+  const n = Math.min(count, MAX_PARTICLES - pCount);
+  for (let j = 0; j < n; j++) {
+    const i = pCount++;
+    const k = i * 3;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const speed = 3 + Math.random() * 9;
-    pPos.set([origin.x, origin.y, origin.z], i * 3);
-    pVel.set([Math.sin(phi) * Math.cos(theta) * speed,
-              Math.abs(Math.cos(phi)) * speed,
-              Math.sin(phi) * Math.sin(theta) * speed], i * 3);
-    pBase.set([c.r, c.g, c.b], i * 3);
+    pPos[k] = origin.x; pPos[k + 1] = origin.y; pPos[k + 2] = origin.z;
+    pVel[k]     = Math.sin(phi) * Math.cos(theta) * speed;
+    pVel[k + 1] = Math.abs(Math.cos(phi)) * speed; // bias upward so bursts fountain
+    pVel[k + 2] = Math.sin(phi) * Math.sin(theta) * speed;
+    pBase[k] = tmpColor.r; pBase[k + 1] = tmpColor.g; pBase[k + 2] = tmpColor.b;
     pMax[i] = pLife[i] = 0.5 + Math.random() * 0.7;
   }
 }
 
+function moveParticle(from, to) {
+  const a = from * 3, b = to * 3;
+  for (let c = 0; c < 3; c++) {
+    pPos[b + c] = pPos[a + c]; pVel[b + c] = pVel[a + c];
+    pBase[b + c] = pBase[a + c]; pCol[b + c] = pCol[a + c];
+  }
+  pLife[to] = pLife[from]; pMax[to] = pMax[from];
+}
+
 function updateParticles(dt) {
-  for (let i = 0; i < MAX_PARTICLES; i++) {
-    const k = i * 3;
-    if (pLife[i] <= 0) continue;
+  let i = 0;
+  while (i < pCount) {
     pLife[i] -= dt;
-    const fade = Math.max(0, pLife[i] / pMax[i]);
+    if (pLife[i] <= 0) {
+      // Swap-remove: pull the last live particle into this slot and re-check
+      // index i without advancing (the moved particle hasn't been updated yet).
+      pCount--;
+      if (i !== pCount) moveParticle(pCount, i);
+      continue;
+    }
+    const k = i * 3;
+    const fade = pLife[i] / pMax[i];
     pVel[k + 1] -= 9 * dt; // gravity
     pPos[k] += pVel[k] * dt; pPos[k + 1] += pVel[k + 1] * dt; pPos[k + 2] += pVel[k + 2] * dt;
     pCol[k] = pBase[k] * fade; pCol[k + 1] = pBase[k + 1] * fade; pCol[k + 2] = pBase[k + 2] * fade;
+    i++;
   }
-  pGeo.attributes.position.needsUpdate = true;
-  pGeo.attributes.color.needsUpdate = true;
+  pGeo.setDrawRange(0, pCount);
+  if (pCount > 0) {
+    pGeo.attributes.position.needsUpdate = true;
+    pGeo.attributes.color.needsUpdate = true;
+  }
 }
 
 // ---------- quality presets ----------
@@ -162,7 +194,10 @@ let preset = PRESETS['3'];
 let composer = null;
 
 function buildComposer(p) {
-  composer?.dispose?.();
+  if (composer) {
+    composer.renderTarget1.dispose();
+    composer.renderTarget2.dispose();
+  }
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: p.msaa });
   composer = new EffectComposer(renderer, target);
   composer.setPixelRatio(p.pixelRatio);
@@ -192,23 +227,21 @@ function applyPreset(p) {
 }
 
 addEventListener('resize', () => {
+  // Resize buffers only; rebuilding the composer and recompiling every
+  // material on each resize event would cause visible stutter.
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  applyPreset(preset);
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 
 // ---------- game state ----------
 const keys = new Set();
-addEventListener('keydown', e => {
-  if (PRESETS[e.key] && PRESETS[e.key] !== preset) applyPreset(PRESETS[e.key]);
-  keys.add(e.code);
-});
-addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('blur', () => keys.clear()); // otherwise keys "stick" after alt-tab
-
 const rand = (lim) => (Math.random() * 2 - 1) * lim;
 const camPos = new THREE.Vector3();
-let score = 0, shake = 0, fps = 60;
+const moveDir = new THREE.Vector3();   // reused every frame: no GC churn
+const camTarget = new THREE.Vector3();
+let score = 0, shake = 0;
 
 function placeAwayFromPlayer(obj, minDist) {
   // Bounded retries so a pathological case can never hang the frame.
@@ -231,13 +264,14 @@ function reset() {
 }
 
 function update(dt, t) {
-  const move = new THREE.Vector3(
+  moveDir.set(
     (keys.has('KeyD') || keys.has('ArrowRight')) - (keys.has('KeyA') || keys.has('ArrowLeft')), 0,
     (keys.has('KeyS') || keys.has('ArrowDown'))  - (keys.has('KeyW') || keys.has('ArrowUp')));
-  if (move.lengthSq() > 0) { // normalize so diagonals aren't ~41% faster
-    player.position.addScaledVector(move.normalize(), 9 * dt);
-    player.rotation.z -= move.x * 9 * dt / 0.8; // roll visually matches travel distance
-    player.rotation.x += move.z * 9 * dt / 0.8;
+  if (moveDir.lengthSq() > 0) { // normalize so diagonals aren't ~41% faster
+    moveDir.normalize();
+    player.position.addScaledVector(moveDir, 9 * dt);
+    player.rotation.z -= moveDir.x * 9 * dt / 0.8; // roll matches travel distance (r = 0.8)
+    player.rotation.x += moveDir.z * 9 * dt / 0.8;
   }
   player.position.x = THREE.MathUtils.clamp(player.position.x, -ARENA, ARENA);
   player.position.z = THREE.MathUtils.clamp(player.position.z, -ARENA, ARENA);
@@ -249,8 +283,10 @@ function update(dt, t) {
   for (const h of hazards) {
     const m = h.mesh;
     m.position.addScaledVector(h.vel, dt);
-    [m.position.x, h.vel.x] = bounceAxis(m.position.x, h.vel.x, ARENA);
-    [m.position.z, h.vel.z] = bounceAxis(m.position.z, h.vel.z, ARENA);
+    h.vel.x = bounceVelocity(m.position.x, h.vel.x, ARENA);
+    h.vel.z = bounceVelocity(m.position.z, h.vel.z, ARENA);
+    m.position.x = THREE.MathUtils.clamp(m.position.x, -ARENA, ARENA);
+    m.position.z = THREE.MathUtils.clamp(m.position.z, -ARENA, ARENA);
     m.rotation.x += dt; m.rotation.y += dt * 1.3;
     if (m.position.distanceTo(player.position) < 1.7) {
       burst(player.position, preset.burst * 2, 0xff4040);
@@ -269,12 +305,14 @@ function update(dt, t) {
 }
 
 function updateCamera(dt) {
-  // Frame-rate independent smoothing: same feel at 30 or 144 FPS.
-  const target = new THREE.Vector3(player.position.x * 0.9, 16, player.position.z * 0.9 + 13);
-  camPos.lerp(target, 1 - Math.exp(-5 * dt));
+  camTarget.set(player.position.x * 0.9, 16, player.position.z * 0.9 + 13);
+  // Frame-rate independent smoothing: same feel at 30 or 3000 renders/s.
+  camPos.lerp(camTarget, 1 - Math.exp(-5 * dt));
   camera.position.copy(camPos);
   if (shake > 0) {
-    camera.position.add(new THREE.Vector3(rand(shake), rand(shake), rand(shake)));
+    camera.position.x += rand(shake);
+    camera.position.y += rand(shake);
+    camera.position.z += rand(shake);
     shake = Math.max(0, shake - dt * 1.2);
   }
   camera.lookAt(player.position);
@@ -282,24 +320,72 @@ function updateCamera(dt) {
 
 // ---------- main loop ----------
 const hud = document.getElementById('hud');
-let last = performance.now(), hudTimer = 0;
-reset();
-camPos.set(0, 16, 13);
-applyPreset(preset);
+let last = performance.now();
+let uncapped = false;
+let frames = 0, fpsWindowStart = last;
 
-renderer.setAnimationLoop((now) => {
+function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05); // clamp after tab-switch / lag spikes
   last = now;
-  fps += (1 / Math.max(dt, 1e-4) - fps) * 0.05;
   update(dt, now / 1000);
   updateCamera(dt);
   composer.render();
-  if ((hudTimer += dt) > 0.25) { // textContent churn every frame is wasted work
-    hudTimer = 0;
-    hud.textContent = `Score ${score}   Quality: ${preset.name} [1/2/3]   FPS ${fps.toFixed(0)}`;
+  // In benchmark mode, wait for the GPU so the counter measures completed
+  // frames, not commands merely queued. This costs a little throughput but
+  // keeps the number honest.
+  if (uncapped) gl.finish();
+
+  // Average over a 0.5 s window: stable at any rate, unlike 1/dt, which is
+  // noisy and divides by ~0 at very high frame rates.
+  frames++;
+  const elapsed = now - fpsWindowStart;
+  if (elapsed >= 500) {
+    const fps = (frames * 1000) / elapsed;
+    frames = 0;
+    fpsWindowStart = now;
+    hud.textContent = `Score ${score}   Quality: ${preset.name} [1/2/3]   ` +
+                      `[4] Benchmark: ${uncapped ? 'UNCAPPED' : 'vsync'}   Renders/s ${fps.toFixed(0)}`;
   }
+}
+
+// MessageChannel re-posts immediately, so it isn't clamped like nested
+// setTimeout (>= 4 ms) and isn't tied to vsync. Input events still get
+// scheduled between messages, so keys keep working.
+const channel = new MessageChannel();
+channel.port1.onmessage = () => {
+  if (!uncapped) return; // loop ends naturally when benchmark mode is off
+  frame(performance.now());
+  channel.port2.postMessage(null);
+};
+
+function setUncapped(on) {
+  if (on === uncapped) return;
+  uncapped = on;
+  frames = 0;
+  fpsWindowStart = last = performance.now();
+  if (on) {
+    renderer.setAnimationLoop(null);   // stop the vsync-locked loop
+    channel.port2.postMessage(null);   // start the free-running loop
+  } else {
+    renderer.setAnimationLoop(frame);  // back to display-synced rendering
+  }
+}
+
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (PRESETS[e.key] && PRESETS[e.key] !== preset) applyPreset(PRESETS[e.key]);
+  else if (e.key === '4') setUncapped(!uncapped);
+  keys.add(e.code);
 });
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear()); // otherwise keys "stick" after alt-tab
+// Don't burn the GPU in a background tab.
+document.addEventListener('visibilitychange', () => { if (document.hidden) setUncapped(false); });
+
+reset();
+camPos.set(0, 16, 13);
+applyPreset(preset);
+renderer.setAnimationLoop(frame);
 </script>
 </body>
 </html>
-
