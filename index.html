@@ -3,254 +3,183 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gamer Console</title>
+  <title>Empty 3D World</title>
   <style>
-    :root {
-      --bg-color: #f8f9fa;
-      --header-bg: #455a64;
-      --sidebar-bg: #ffffff;
-      --border-color: #dadce0;
-      --primary: #1a73e8;
-      --text-main: #202124;
-      --text-sub: #5f6368;
-      --accent-horror: #d32f2f;
-      --accent-platformer: #00897b;
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: monospace;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    
-    /* Top Header */
-    header { background: var(--header-bg); color: #fff; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--border-color); }
-    .brand { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 500; }
-    .search-bar { flex: 1; max-width: 600px; margin: 0 24px; position: relative; }
-    .search-bar input { width: 100%; padding: 8px 16px; border-radius: 8px; border: none; background: rgba(255,255,255,0.15); color: #fff; outline: none; }
-    .search-bar input::placeholder { color: rgba(255,255,255,0.7); }
-
-    /* Layout */
-    .container { display: flex; flex: 1; overflow: hidden; }
-    aside { width: 240px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); padding: 12px 0; display: flex; flex-direction: column; }
-    .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 24px; color: var(--text-sub); text-decoration: none; font-size: 14px; cursor: pointer; border-radius: 0 20px 20px 0; margin-right: 8px; font-weight: 500; }
-    .nav-item:hover { background: #f1f3f4; }
-    .nav-item.active { background: #e8f0fe; color: var(--primary); }
-
-    main { flex: 1; padding: 24px; overflow-y: auto; }
-    .card { background: #fff; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-    .card-title { font-size: 16px; font-weight: 500; color: var(--text-main); margin-bottom: 16px; }
-
-    /* Verification Modal */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal { background: #fff; width: 800px; max-width: 90%; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
-    .modal-header { padding: 16px 24px; background: #37474f; color: #fff; font-size: 18px; font-weight: 500; }
-    .modal-body { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .property-option { border: 2px solid var(--border-color); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
-    .property-option:hover, .property-option.selected { border-color: var(--primary); background: #f4f8fe; }
-    .property-option h3 { font-size: 16px; margin: 12px 0 8px; }
-    .property-option p { font-size: 12px; color: var(--text-sub); text-align: left; }
-    .property-option input { width: 100%; padding: 8px; margin-top: 12px; border: 1px solid var(--border-color); border-radius: 4px; }
-    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; }
-
-    /* Code Editor & Buttons */
-    textarea { width: 100%; height: 180px; font-family: monospace; padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: #272822; color: #f8f8f2; font-size: 13px; }
-    .btn { padding: 8px 16px; border-radius: 4px; border: none; font-weight: 500; cursor: pointer; background: var(--primary); color: #fff; }
-    .btn:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-secondary { background: #fff; color: var(--text-sub); border: 1px solid var(--border-color); }
-
-    /* Metric Grid */
-    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
-    .metric-box { background: #f8f9fa; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; text-align: center; }
-    .metric-value { font-size: 28px; font-weight: bold; margin-top: 8px; color: var(--primary); }
-    .genre-horror .metric-value { color: var(--accent-horror); }
-
-    /* Hidden Sections */
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #00ffcc;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 12px 16px;
+      border: 1px solid #00ffcc;
+      border-radius: 4px;
+      font-size: 13px;
+      pointer-events: none;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-      <span>Gamer Console</span>
-    </div>
-    <div class="search-bar">
-      <input type="text" id="urlInspector" value="https://debstive.github.io/St.-Marrow/" readonly>
-    </div>
-  </header>
-
-  <div class="container">
-    <aside>
-      <div class="nav-item active" onclick="switchTab('overview', this)">Overview</div>
-      <div class="nav-item" onclick="switchTab('code-analyzer', this)">Code Analyzer</div>
-      <div class="nav-item" onclick="switchTab('telemetry', this)">SDK Workbench</div>
-      <div class="nav-item" onclick="switchTab('exporter', this)">App Exporter</div>
-    </aside>
-
-    <main>
-      <!-- OVERVIEW TAB -->
-      <div id="overview" class="tab-content active">
-        <div class="card">
-          <div class="card-title" id="gameTitle">Game Performance Overview (St. Marrow)</div>
-          <div class="metrics-grid">
-            <div class="metric-box"><div>Total Players</div><div class="metric-value" id="valPlayers">1,420</div></div>
-            <div class="metric-box"><div>Total Deaths</div><div class="metric-value" id="valDeaths">3,892</div></div>
-            <div class="metric-box"><div>Escapes / Wins</div><div class="metric-value" id="valWins">142</div></div>
-            <div class="metric-box"><div>Avg Session Time</div><div class="metric-value" id="valTime">14m 32s</div></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">Live Event Stream</div>
-          <textarea id="eventLog" readonly style="height: 140px; background: #1e1e1e; color: #4af626;"></textarea>
-        </div>
-      </div>
-
-      <!-- CODE ANALYZER TAB -->
-      <div id="code-analyzer" class="tab-content">
-        <div class="card">
-          <div class="card-title">Paste Game Code to Inspect & Auto-Tune Analytics</div>
-          <p style="font-size: 13px; color: #666; margin-bottom: 12px;">The static analyzer parses variables (e.g. <code>sanity</code>, <code>flashlight</code>, <code>jump</code>) to automatically construct your metrics.</p>
-          <textarea id="sourceCode" placeholder="Paste JavaScript game source code here...">
-// St. Marrow - Horror Game Core Script
-const player = {
-  username: "Player1",
-  sanity: 100,
-  hasFlashlight: true
-};
-
-function onMonsterCatch() {
-  gameConsole.capture('player_died', { cause: 'Shadow_Specter', room: 'Asylum_Basement' });
-}
-
-function onEscape() {
-  gameConsole.capture('level_completed', { level: 1, score: 9900 });
-}
-          </textarea>
-          <button class="btn" style="margin-top: 12px;" onclick="analyzeCode()">Run Live Code Inspection</button>
-        </div>
-      </div>
-
-      <!-- TELEMETRY SDK TAB -->
-      <div id="telemetry" class="tab-content">
-        <div class="card">
-          <div class="card-title">SDK Console (Execute Live Code)</div>
-          <textarea id="sdkCode">
-gameConsole.identify('player_99', { username: 'HorrorFanatic', level: 3 });
-gameConsole.capture('player_died', { cause: 'Shadow_Specter', room: 'Hallway_B' });
-          </textarea>
-          <button class="btn" style="margin-top: 12px;" onclick="runSDK()">Run Code</button>
-        </div>
-      </div>
-
-      <!-- EXPORTER TAB -->
-      <div id="exporter" class="tab-content">
-        <div class="card">
-          <div class="card-title">Download Executable Desktop & Web Packages</div>
-          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
-            <button class="btn" onclick="exportApp('exe')">Download Windows (.exe)</button>
-            <button class="btn" onclick="exportApp('dmg')">Download macOS (.dmg)</button>
-            <button class="btn" onclick="exportApp('crx')">Download Chrome Extension (.zip)</button>
-          </div>
-        </div>
-      </div>
-    </main>
+  <div id="hud">
+    3D ENGINE: EMPTY WORLD<br>
+    MOVE: W, A, S, D<br>
+    LOOK: Click & Drag Mouse<br>
+    POS: <span id="pos">X: 0, Y: 0, Z: 0</span>
   </div>
 
-  <!-- Verification Modal -->
-  <div class="modal-overlay" id="verifyModal">
-    <div class="modal">
-      <div class="modal-header">Select property type</div>
-      <div class="modal-body">
-        <div class="property-option" onclick="selectProp('domain', this)">
-          <h3>Domain</h3>
-          <p>• All URLs across subdomains</p>
-          <p>• Requires DNS verification</p>
-          <input type="text" placeholder="example.com" id="domainInput">
-        </div>
-        <div class="property-option selected" onclick="selectProp('prefix', this)">
-          <h3>URL prefix</h3>
-          <p>• Only URLs under entered address</p>
-          <p>• Allows HTML meta tag verification</p>
-          <input type="text" value="https://debstive.github.io/St.-Marrow/" id="urlInput">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeModal()">CONTINUE</button>
-      </div>
-    </div>
-  </div>
+  <canvas id="worldCanvas"></canvas>
 
   <script>
-    // System logic
-    const gameConsole = {
-      identify: (id, traits) => logEvent(`IDENTIFY: ${id} -> ${JSON.stringify(traits)}`),
-      capture: (event, props) => {
-        logEvent(`CAPTURE: [${event}] -> ${JSON.stringify(props)}`);
-        if(event === 'player_died') {
-          let el = document.getElementById('valDeaths');
-          el.innerText = (parseInt(el.innerText.replace(',','')) + 1).toLocaleString();
-        }
-      }
+    const canvas = document.getElementById('worldCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Camera structure
+    let camera = {
+      x: 0,
+      y: 2,
+      z: -10,
+      pitch: 0,
+      yaw: 0
     };
 
-    function logEvent(msg) {
-      const log = document.getElementById('eventLog');
-      log.value += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
-      log.scrollTop = log.scrollHeight;
+    let keys = {};
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    let isMouseDown = false;
+    let mouseX = 0, mouseY = 0;
+
+    window.addEventListener('mousedown', e => {
+      isMouseDown = true;
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => isMouseDown = false);
+
+    window.addEventListener('mousemove', e => {
+      if (!isMouseDown) return;
+      let dx = e.clientX - mouseX;
+      let dy = e.clientY - mouseY;
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+
+      camera.yaw += dx * 0.003;
+      camera.pitch -= dy * 0.003;
+      camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
+    });
+
+    // 3D Line Projector Math Engine
+    function project(x, y, z) {
+      // Translate relative to camera
+      let dx = x - camera.x;
+      let dy = y - camera.y;
+      let dz = z - camera.z;
+
+      // Rotate around Y axis (Yaw)
+      let cosY = Math.cos(-camera.yaw), sinY = Math.sin(-camera.yaw);
+      let x1 = dx * cosY - dz * sinY;
+      let z1 = dx * sinY + dz * cosY;
+      let y1 = dy;
+
+      // Rotate around X axis (Pitch)
+      let cosP = Math.cos(-camera.pitch), sinP = Math.sin(-camera.pitch);
+      let y2 = y1 * cosP - z1 * sinP;
+      let z2 = y1 * sinP + z1 * cosP;
+      let x2 = x1;
+
+      if (z2 <= 0.1) return null; // Behind camera clipping
+
+      let fov = canvas.width;
+      let px = (x2 / z2) * fov + canvas.width / 2;
+      let py = (y2 / z2) * fov + canvas.height / 2;
+
+      return { x: px, y: py, scale: 1 / z2 };
     }
 
-    function switchTab(tabId, el) {
-      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-      document.getElementById(tabId).classList.add('active');
-      el.classList.add('active');
+    // Generate grid lines for the empty 3D world space
+    let gridLines = [];
+    for (let i = -50; i <= 50; i += 5) {
+      gridLines.push({ x1: i, y1: 0, z1: -50, x2: i, y2: 0, z2: 50 }); // Longitudinal lines
+      gridLines.push({ x1: -50, y1: 0, z1: i, x2: 50, y2: 0, z2: i }); // Latitudinal lines
     }
 
-    function closeModal() {
-      document.getElementById('verifyModal').style.display = 'none';
-      logEvent('Property verified: https://debstive.github.io/St.-Marrow/');
+    function update() {
+      let speed = 0.15;
+      let forwardX = Math.sin(camera.yaw) * speed;
+      let forwardZ = Math.cos(camera.yaw) * speed;
+      let rightX = Math.sin(camera.yaw + Math.PI / 2) * speed;
+      let rightZ = Math.cos(camera.yaw + Math.PI / 2) * speed;
+
+      if (keys['w']) { camera.x += forwardX; camera.z += forwardZ; }
+      if (keys['s']) { camera.x -= forwardX; camera.z -= forwardZ; }
+      if (keys['a']) { camera.x -= rightX; camera.z -= rightZ; }
+      if (keys['d']) { camera.x += rightX; camera.z += rightZ; }
+
+      document.getElementById('pos').innerText = 
+        `X: ${camera.x.toFixed(1)}, Y: ${camera.y.toFixed(1)}, Z: ${camera.z.toFixed(1)}`;
     }
 
-    function selectProp(type, el) {
-      document.querySelectorAll('.property-option').forEach(p => p.classList.remove('selected'));
-      el.classList.add('selected');
-    }
+    function render() {
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    function analyzeCode() {
-      const code = document.getElementById('sourceCode').value;
-      if (code.includes('sanity') || code.includes('Horror') || code.includes('Shadow')) {
-        document.body.classList.add('genre-horror');
-        alert('Code Analysis Complete: Horror Mechanics Detected! Dashboard updated.');
-      } else {
-        alert('Code Analysis Complete: Generic JS Engine detected.');
+      // Draw horizon reference grid
+      ctx.strokeStyle = '#00ffcc22';
+      ctx.lineWidth = 1;
+
+      gridLines.forEach(line => {
+        let p1 = project(line.x1, line.y1, line.z1);
+        let p2 = project(line.x2, line.y2, line.z2);
+
+        if (p1 && p2) {
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      });
+
+      // Draw origin center marker (3D axes lines)
+      let origin = project(0, 0, 0);
+      let xAxis = project(5, 0, 0);
+      let yAxis = project(0, 5, 0);
+      let zAxis = project(0, 0, 5);
+
+      if (origin) {
+        if (xAxis) { ctx.strokeStyle = '#ff3333'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(xAxis.x, xAxis.y); ctx.stroke(); }
+        if (yAxis) { ctx.strokeStyle = '#33ff33'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(yAxis.x, yAxis.y); ctx.stroke(); }
+        if (zAxis) { ctx.strokeStyle = '#3333ff'; ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(zAxis.x, zAxis.y); ctx.stroke(); }
       }
-      switchTab('overview', document.querySelectorAll('.nav-item')[0]);
     }
 
-    function runSDK() {
-      const code = document.getElementById('sdkCode').value;
-      try {
-        eval(code);
-        alert('SDK Commands Executed Successfully!');
-      } catch(e) {
-        alert('Execution Error: ' + e.message);
-      }
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
     }
 
-    function exportApp(type) {
-      const content = type === 'crx' 
-        ? '{"manifest_version": 3, "name": "St. Marrow", "version": "1.0"}'
-        : '@echo off\necho Running St. Marrow Game Package...';
-      
-      const blob = new Blob([content], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `St_Marrow_Build.${type === 'crx' ? 'zip' : type}`;
-      a.click();
-    }
-
-    // Initial setup
-    logEvent('Gamer Console Engine Initialized.');
+    loop();
   </script>
 </body>
 </html>
